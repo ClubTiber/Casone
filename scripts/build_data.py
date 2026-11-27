@@ -310,7 +310,25 @@ def main():
                 tar.append({k: t[k] for k in ("da", "a", "auto", "semi", "min_posti", "caparra", "periodo") if t.get(k) is not None})
 
         # --- recapiti
-        site_ok = bool(web and web.get("ok"))
+        # un sito che rimanda a un dominio diverso (es. dominio scaduto e riusato) non è più quello della casa:
+        # non se ne usa nulla (foto, testi, recapiti) e non lo si linka
+        def sld(u):
+            u = u or ""
+            if not re.match(r"https?://", u): u = "http://" + u
+            p = urlparse(u).netloc.lower().split(":")[0].removeprefix("www.").split(".")
+            return p[-2] if len(p) >= 2 else p[0]
+        redirected = bool(web and web.get("ok") and sld(web["urls"][0]) != sld(web.get("url")))
+        site_ok = bool(web and web.get("ok")) and not redirected and not web.get("parcheggiato")
+        # sito generico (ente, associazione) che non nomina né la casa né il comune: si tiene il link ma non i contenuti
+        generic = False
+        if site_ok:
+            import unicodedata
+            nn = lambda s: unicodedata.normalize("NFD", (s or "").lower()).encode("ascii", "ignore").decode()
+            blob = nn(" ".join([web.get("titolo") or "", web.get("meta") or "", " ".join(web.get("testo") or []), web.get("url") or ""]))
+            toks = [t for t in re.findall(r"[a-z]+", nn(h["nome"])) if t not in STOP and len(t) >= 3]
+            generic = not (any(t in blob for t in toks) or nn(h["comune"]) in blob)
+            if generic:
+                site_ok = False
         site_host = urlparse(web["url"]).netloc.lower().removeprefix("www.") if site_ok else (urlparse(h["contatti"].get("web") or "").netloc.lower().removeprefix("www.") if h["contatti"].get("web") else "")
         toks = name_tokens(h)
         phones = {}
@@ -342,6 +360,8 @@ def main():
             for e in (p or {}).get("email_descr", []):
                 if norm_email(e) not in emails and "ospitalitareligiosa" not in e: emails.append(norm_email(e))
         webu = (web.get("url") if site_ok else None) or h["contatti"].get("web") or (por or {}).get("web")
+        if redirected: webu = web["urls"][0]
+        if generic: webu = web.get("url") or webu
         social = web.get("social", []) if site_ok else []
         form_or = bool(por and por.get("modulo"))
         cia_ids = [f["id"] for f in fonti if f["s"] == "CIA"]
@@ -355,8 +375,11 @@ def main():
         # --- sito web: stato
         web_state = None
         if web:
-            if web.get("ok"):
+            if redirected:
+                web_state = "reindirizzato"
+            elif web.get("ok"):
                 web_state = "parcheggiato" if web.get("parcheggiato") else "online"
+                if generic: stats["web_generico"] += 1
             else:
                 host = urlparse(web["urls"][0] if re.match(r"https?://", web["urls"][0]) else "http://" + web["urls"][0]).netloc.lower()
                 ex = dns_exists(host, DNS)
@@ -419,6 +442,8 @@ def main():
             sig.append((-2, "testo_chiusura", "Il testo dice: “" + cl_txt[0] + "”"))
         if web_state == "dominio_inesistente":
             sig.append((-2, "dominio", "Il dominio del sito web non esiste più"))
+        elif web_state == "reindirizzato":
+            sig.append((-2, "reindirizzato", f"Il sito indicato ({sld(web['urls'][0])}) ora rimanda a un altro sito che non c'entra con la casa ({urlparse(web['url']).netloc})"))
         elif web_state == "parcheggiato":
             sig.append((-2, "parcheggiato", "Il sito web è un dominio parcheggiato o sospeso (" + (web.get("parcheggiato") or "") + ")"))
         elif web_state == "pagina_inesistente":
@@ -426,7 +451,7 @@ def main():
         fut = [d for d in occ if d <= (TODAY + timedelta(days=500)).isoformat()]
         if fut:
             sig.append((2, "calendario", f"Calendario con {len(fut)} giorni già prenotati nei prossimi mesi"))
-        if site_ok and web_state == "online":
+        if (site_ok or generic) and web_state == "online":
             yrs = [y for y in web.get("anni", []) if y <= TODAY.year + 1]
             if yrs and max(yrs) >= TODAY.year - 1:
                 sig.append((2, "sito_recente", f"Sito online che cita il {max(yrs)}"))
@@ -450,7 +475,7 @@ def main():
         neg = [s for s in sig if s[0] < 0]
         if any(s[0] <= -3 for s in neg) or (any(s[1] in ("testo_chiusura",) for s in neg) and pos < 2):
             stato = "chiusa"
-        elif any(s[1] in ("dominio", "parcheggiato") for s in neg) and not phones and not emails and not wa and pos < 2:
+        elif any(s[1] in ("dominio", "parcheggiato", "reindirizzato") for s in neg) and not phones and not emails and not wa and pos < 2:
             stato = "chiusa"
         elif neg and pos < 2:
             stato = "dubbia"
@@ -466,13 +491,15 @@ def main():
             for f in (p or {}).get("foto", []):
                 if f["b"] not in seenf:
                     seenf.add(f["b"]); foto.append({"s": f["s"], "b": f["b"], "o": "OR" if p is por else "CIA"})
-        foto = [f for f in foto if "no-image" not in f["b"]]
+        # niente segnaposto e niente file che non sono immagini (PDF, HEIC, download interrotti)
+        foto = [f for f in foto if "no-image" not in f["b"] and not re.search(r"\.(pdf|heic|heif|crdownload|docx?|zip)(\?|$)", f["b"], re.I)]
         if not foto:
             for u in [u for u in (h.get("foto", []) or []) if "no-image" not in u]:
                 if u not in seenf:
                     seenf.add(u); foto.append({"s": u, "b": u, "o": "OR" if "ospitalita" in u else "CIA"})
         if site_ok and web_state == "online":
             for f in web.get("foto", []):
+                if re.search(r"webcam|/cam/|camplus|meteo", f["u"], re.I): continue
                 if f["u"] not in seenf:
                     seenf.add(f["u"]); foto.append({"s": f["u"], "b": f["u"], "o": "sito"})
         old_n = len([u for u in (h.get("foto") or []) if "no-image" not in u])
@@ -506,7 +533,8 @@ def main():
             "cia_contatto": [f"https://www.caseinautogestione.it/it/m-contatta-gestore.php?hid={i}" for i in cia_ids],
             "foto": foto, "video": video,
             "sintesi": h.get("descr"), "descr_or": descr_or, "descr_cia": descr_cia,
-            "sito": ({"url": web.get("url"), "titolo": web.get("titolo"), "meta": web.get("meta"), "testo": site_txt, "anni": web.get("anni"), "pagine": web.get("pagine")} if site_ok else ({"stato": web_state, "url": (web.get("urls") or [None])[0], "tentativi": web.get("tentativi")} if web else None)),
+            "sito": ({"url": web.get("url"), "titolo": web.get("titolo"), "meta": web.get("meta"), "testo": site_txt, "anni": web.get("anni"), "pagine": web.get("pagine")} if site_ok else
+                     {"url": web.get("url"), "titolo": web.get("titolo"), "generico": True} if generic else ({"stato": web_state, "url": (web.get("urls") or [None])[0], "verso": (urlparse(web["url"]).netloc if redirected else None), "tentativi": web.get("tentativi")} if web else None)),
             "segnali": [{"p": s[0], "c": s[1], "t": s[2]} for s in sig],
             "prezzi_txt": price_snips, "costi_extra": extra_costs, "prezzi_scheda": h.get("prezzi") or h.get("prezzo_txt"),
             "minimo": h.get("minimo"), "avvisi": h.get("avvisi"), "periodi": h.get("periodi"), "periodi_cia": h.get("periodi_cia"),

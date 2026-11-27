@@ -1,6 +1,6 @@
 // Scheda completa di una casa (finestra laterale), galleria a schermo intero e richiesta di disponibilità.
 import { $, $$, esc, icon, nf, fmtEuro, monthsTxt, MON, MONL, hav, toast, fmtDate, todayISO, nightsBetween } from './util.js';
-import { D, loadDetails, ZONEL, AMB, TRATTL, ALLOGL, DISTL, FEAT_GROUPS, featLabel, STATO, SRC, MYSTATUS, priceInfo, placeTxt, phoneHref, waHref, webLabel, distFrom, tariffFor } from './data.js';
+import { D, loadDetails, ZONEL, AMB, TRATTL, ALLOGL, DISTL, FEAT_GROUPS, featLabel, STATO, SRC, MYSTATUS, priceInfo, placeTxt, phoneHref, waHref, webLabel, distFrom, tariffFor, webUsable } from './data.js';
 import * as store from './store.js';
 import * as M from './map.js';
 import { F } from './filters.js';
@@ -68,8 +68,9 @@ function render(h, det) {
   const tel = (c.tel || []).map(x => `<a class="crow" href="${esc(phoneHref(x.n))}">${icon(x.k === 'cell' ? 'smartphone' : 'phone')}<span class="cv">${esc(x.n)}</span><span class="ck">${x.k === 'cell' ? 'cellulare' : x.k === 'fisso' ? 'fisso' : 'telefono'}${x.src && x.src.includes('sito') && !x.src.includes('scheda') ? '<br>dal sito web' : ''}</span></a>`);
   const wa = (c.wa || []).map(x => `<a class="crow wa" href="${esc(waHref(x))}" target="_blank" rel="noopener">${icon('whatsapp')}<span class="cv">${esc(x)}</span><span class="ck">WhatsApp</span></a>`);
   const em = (c.email || []).map(x => `<a class="crow" href="mailto:${esc(x)}">${icon('mail')}<span class="cv">${esc(x)}</span><span class="ck">email</span></a>`);
-  const webState = { online: 'sito online', parcheggiato: 'dominio parcheggiato', dominio_inesistente: 'il dominio non esiste più', pagina_inesistente: 'pagina non trovata', non_verificabile: 'non verificabile da qui' };
-  const web = c.web ? `<a class="crow ${c.webs && c.webs !== 'online' ? 'off' : ''}" href="${esc(c.web)}" target="_blank" rel="noopener">${icon('globe')}<span class="cv">${esc(webLabel(c.web))}</span><span class="ck">${esc(webState[c.webs] || 'sito web')}</span></a>` : '';
+  const web = !c.web ? '' : webUsable(c)
+    ? `<a class="crow ${c.webs && c.webs !== 'online' ? 'off' : ''}" href="${esc(c.web)}" target="_blank" rel="noopener">${icon('globe')}<span class="cv">${esc(webLabel(c.web))}</span><span class="ck">${esc(webState[c.webs] || 'sito web')}</span></a>`
+    : `<div class="crow off">${icon('alert')}<span class="cv" style="text-decoration:line-through">${esc(webLabel(c.web))}</span><span class="ck">${esc(webState[c.webs])}</span></div>`;
   const soc = (c.social || []).map(u => { const k = /instagram/.test(u) ? 'instagram' : /youtube/.test(u) ? 'youtube' : /facebook/.test(u) ? 'facebook' : 'link'; return `<a class="crow" href="${esc(u)}" target="_blank" rel="noopener">${icon(k)}<span class="cv">${esc(k[0].toUpperCase() + k.slice(1))}</span><span class="ck">pagina social</span></a>`; });
   const fonti = det.fonti || [];
   const orF = fonti.find(f => f.s === 'OR');
@@ -148,7 +149,7 @@ function render(h, det) {
   // ---- prezzi e tariffe
   const tar = h.tar || [];
   const priceSect = `
-    ${tar.length ? `<table class="tartable"><thead><tr><th>Periodo</th><th>Autogestione</th><th>Semigestione</th><th>Min. persone</th><th>Caparra</th></tr></thead><tbody>${tar.map(x => `<tr><td>${esc(x.periodo || '')}</td><td class="n">${x.auto ? '€ ' + fmtEuro(x.auto) : '–'}</td><td class="n">${x.semi ? '€ ' + fmtEuro(x.semi) : '–'}</td><td class="n">${x.min_posti || '–'}</td><td class="n">${x.caparra ? '€ ' + fmtEuro(x.caparra) : '–'}</td></tr>`).join('')}</tbody></table><p class="srcnote">Prezzi a persona al giorno, da caseinautogestione.it.</p>` : ''}
+    ${tar.length ? `<div class="tscroll"><table class="tartable"><thead><tr><th>Periodo</th><th>Autogestione</th><th>Semigestione</th><th>Min. persone</th><th>Caparra</th></tr></thead><tbody>${tar.map(x => `<tr><td>${esc(x.periodo || '')}</td><td class="n">${x.auto ? '€ ' + fmtEuro(x.auto) : '–'}</td><td class="n">${x.semi ? '€ ' + fmtEuro(x.semi) : '–'}</td><td class="n">${x.min_posti || '–'}</td><td class="n">${x.caparra ? '€ ' + fmtEuro(x.caparra) : '–'}</td></tr>`).join('')}</tbody></table></div><p class="srcnote">Prezzi a persona al giorno, da caseinautogestione.it.</p>` : ''}
     ${det.prezzi_scheda ? `<p><b>Dalla scheda:</b> ${esc(det.prezzi_scheda)}</p>` : ''}
     ${(det.prezzi_txt || []).length ? `<p style="margin-bottom:4px"><b>Prezzi citati nei testi</b></p><ul class="flist">${det.prezzi_txt.map(x => `<li>${icon('euro')}<span>${esc(x)}</span></li>`).join('')}</ul>` : ''}
     ${(det.costi_extra || []).length ? `<p style="margin:12px 0 4px"><b>Costi extra e caparre</b></p><ul class="flist">${det.costi_extra.map(x => `<li>${icon('info')}<span>${esc(x)}</span></li>`).join('')}</ul>` : ''}
@@ -162,8 +163,9 @@ function render(h, det) {
   const sig = det.segnali || [];
   const sito = det.sito;
   const verify = `<ul class="signals">${sig.length ? sig.map(s => `<li class="${s.p > 0 ? 'p' : s.p < 0 ? 'n' : 'z'}">${icon(s.p > 0 ? 'check' : s.p < 0 ? 'alert' : 'info')}<span style="color:var(--ink)">${esc(s.t)}</span></li>`).join('') : `<li class="z">${icon('info')}<span>Nessun segnale particolare: la scheda è presente sul portale.</span></li>`}</ul>
-    ${sito && sito.url && sito.titolo ? `<p class="small" style="margin-top:10px">Sito controllato: <a href="${esc(sito.url)}" target="_blank" rel="noopener">${esc(webLabel(sito.url))}</a> — “${esc(sito.titolo)}”${sito.pagine ? ` · ${sito.pagine.length} pagine lette` : ''}</p>` : ''}
-    ${sito && sito.stato && sito.stato !== 'online' ? `<p class="small">Sito indicato: ${esc(sito.url || '')} — ${esc(webState[sito.stato] || sito.stato)}${sito.stato === 'non_verificabile' ? ' (risponde solo senza https o con certificato non valido: provalo dal tuo browser)' : ''}</p>` : ''}
+    ${sito && sito.generico ? `<p class="small" style="margin-top:10px">Il sito indicato (<a href="${esc(sito.url)}" target="_blank" rel="noopener">${esc(webLabel(sito.url))}</a>) è quello generale dell'ente o dell'associazione e non parla di questa casa: non ne abbiamo preso testi, foto o recapiti.</p>` : ''}
+    ${sito && sito.url && sito.titolo && !sito.generico ? `<p class="small" style="margin-top:10px">Sito controllato: <a href="${esc(sito.url)}" target="_blank" rel="noopener">${esc(webLabel(sito.url))}</a> — “${esc(sito.titolo)}”${sito.pagine ? ` · ${sito.pagine.length} pagine lette` : ''}</p>` : ''}
+    ${sito && sito.stato && sito.stato !== 'online' ? `<p class="small">Sito indicato: ${esc(webLabel(sito.url || ''))} — ${esc(webState[sito.stato] || sito.stato)}${sito.verso ? ` (${esc(sito.verso)}): non lo apriamo` : ''}${sito.stato === 'non_verificabile' ? ' (risponde solo senza https o con certificato non valido: provalo dal tuo browser)' : ''}</p>` : ''}
     ${(det.cambi || []).length ? `<p style="margin:14px 0 4px"><b>Cosa è cambiato rispetto ai dati del ${esc(D.META.date_base || '')}</b></p><ul class="flist">${det.cambi.map(x => `<li>${icon('refresh')}<span>${esc(x)}</span></li>`).join('')}</ul>` : ''}
     <p class="small" style="margin-top:12px">Annunci: ${fonti.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(SRC[f.s][1])} ${icon('external')}</a>`).join(' · ')}${(det.altri || []).map(a => ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)} ${icon('external')}</a>`).join('')}${h.visite ? ` · ${nf.format(h.visite)} visualizzazioni su ospitalitareligiosa.it` : ''}</p>`;
 
@@ -206,7 +208,7 @@ function render(h, det) {
     </div></div>`;
 }
 
-const webState = { online: 'sito online', parcheggiato: 'dominio parcheggiato', dominio_inesistente: 'il dominio non esiste più', pagina_inesistente: 'pagina non trovata', non_verificabile: 'non verificabile' };
+const webState = { online: 'sito online', parcheggiato: 'dominio parcheggiato', dominio_inesistente: 'il dominio non esiste più', pagina_inesistente: 'pagina non trovata', non_verificabile: 'non verificabile da qui', reindirizzato: 'ora rimanda a un altro sito' };
 
 function calendar(h) {
   const busy = new Set();

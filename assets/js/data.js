@@ -123,6 +123,8 @@ function addOne(iso) { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDat
 
 export function distFrom(h, o) { return o && h.lat != null ? hav(o.lat, o.lon, h.lat, h.lon) : null; }
 
+// il sito si può linkare? (no se il dominio non esiste più, è parcheggiato o rimanda altrove)
+export const webUsable = c => !!(c && c.web && !['dominio_inesistente', 'parcheggiato', 'reindirizzato'].includes(c.webs));
 export function phoneHref(n) { return 'tel:' + n.replace(/[^\d+]/g, ''); }
 export function waHref(n, text) { const d = n.replace(/\D/g, ''); return `https://wa.me/${d.startsWith('39') ? d : '39' + d}${text ? '?text=' + encodeURIComponent(text) : ''}`; }
 export function webLabel(u) { return (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''); }
@@ -137,7 +139,7 @@ export function contactBadges(h, max = 4) {
   if (cell) out.push(`<a href="${esc(phoneHref(cell.n))}" title="Cellulare ${esc(cell.n)}">${icon('smartphone')}Cell.</a>`);
   if (fisso) out.push(`<a href="${esc(phoneHref(fisso.n))}" title="Telefono ${esc(fisso.n)}">${icon('phone')}Tel.</a>`);
   if (c.email && c.email.length) out.push(`<a href="mailto:${esc(c.email[0])}" title="${esc(c.email[0])}">${icon('mail')}Email</a>`);
-  if (c.web && c.webs !== 'dominio_inesistente') out.push(`<a href="${esc(c.web)}" target="_blank" rel="noopener" title="${esc(webLabel(c.web))}">${icon('globe')}Sito</a>`);
+  if (webUsable(c)) out.push(`<a href="${esc(c.web)}" target="_blank" rel="noopener" title="${esc(webLabel(c.web))}">${icon('globe')}Sito</a>`);
   if (!out.length) {
     if ((h.src || []).includes('CIA')) out.push(`<span class="none">Si contatta dal portale caseinautogestione.it</span>`);
     else if (c.form) out.push(`<span class="none">Modulo di contatto sul portale</span>`);

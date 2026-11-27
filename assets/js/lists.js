@@ -1,6 +1,6 @@
 // Pagina "Le mie liste": liste personali, stato dei contatti, note, esporta/importa, confronto tra liste.
 import { $, $$, esc, icon, nf, fmtEuro, monthsTxt, download, readFile, toast, csv, todayISO, fmtDate, plural } from './util.js';
-import { D, priceInfo, MYSTATUS, MYSTATUSL, STATO, webLabel } from './data.js';
+import { D, priceInfo, MYSTATUS, MYSTATUSL, STATO, webLabel, webUsable } from './data.js';
 import * as store from './store.js';
 import { setFilters } from './filters.js';
 
@@ -55,7 +55,7 @@ function row(id) {
     <div><h3><a href="#/casa/${id}">${esc(h.nome)}</a></h3>
       <div class="place">${esc(h.comune)} (${esc(h.prov)}) · ${esc(h.regione)}</div>
       <div class="keyfacts"><span class="kf"><b>${h.posti || '?'}</b> posti</span>${p.ask ? '<span class="kf ask">prezzo da chiedere</span>' : `<span class="kf"><b style="font-size:16px">${esc(p.main)}</b> ${esc(p.unit)}</span>`}${h.stato !== 'ok' ? `<span class="tag ${STATO[h.stato].cls}">${STATO[h.stato].short}</span>` : ''}</div>
-      <div class="contacts">${wa ? `<a class="wa" href="https://wa.me/${wa.replace(/\D/g, '').replace(/^(?!39)/, '39')}" target="_blank" rel="noopener">${icon('whatsapp')}${esc(wa)}</a>` : ''}${tel ? `<a href="tel:${esc(tel.n.replace(/[^\d+]/g, ''))}">${icon(tel.k === 'cell' ? 'smartphone' : 'phone')}${esc(tel.n)}</a>` : ''}${em ? `<a href="mailto:${esc(em)}">${icon('mail')}${esc(em)}</a>` : ''}${c.web ? `<a href="${esc(c.web)}" target="_blank" rel="noopener">${icon('globe')}${esc(webLabel(c.web)).slice(0, 28)}</a>` : ''}</div>
+      <div class="contacts">${wa ? `<a class="wa" href="https://wa.me/${wa.replace(/\D/g, '').replace(/^(?!39)/, '39')}" target="_blank" rel="noopener">${icon('whatsapp')}${esc(wa)}</a>` : ''}${tel ? `<a href="tel:${esc(tel.n.replace(/[^\d+]/g, ''))}">${icon(tel.k === 'cell' ? 'smartphone' : 'phone')}${esc(tel.n)}</a>` : ''}${em ? `<a href="mailto:${esc(em)}">${icon('mail')}${esc(em)}</a>` : ''}${webUsable(c) ? `<a href="${esc(c.web)}" target="_blank" rel="noopener">${icon('globe')}${esc(webLabel(c.web)).slice(0, 28)}</a>` : ''}</div>
       <div class="acts"><button type="button" class="btn small quiet" data-move>${icon('list-plus')} Altre liste</button><button type="button" class="btn small quiet" data-rm>${icon('trash')} Togli</button></div>
     </div>
     <div class="mine">

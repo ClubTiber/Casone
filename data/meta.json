@@ -94,16 +94,18 @@
  },
  "stats": {
   "geo_esatta": 581,
-  "web_online": 69,
+  "web_online": 67,
   "prezzo_auto": 148,
-  "stato_attiva": 95,
+  "stato_attiva": 94,
   "prezzo_nd": 456,
   "stato_ok": 621,
-  "stato_dubbia": 13,
+  "stato_dubbia": 14,
   "web_non_verificabile": 12,
   "prezzo_libera": 109,
+  "web_reindirizzato": 2,
   "web_pagina_inesistente": 1,
   "prezzo_testo": 10,
+  "web_generico": 3,
   "web_dominio_inesistente": 4,
   "prezzo_da": 7,
   "stato_chiusa": 5,
@@ -113,6 +115,6 @@
  },
  "n": 734,
  "verifica": {
-  "case_con_cambi": 310
+  "case_con_cambi": 308
  }
 }

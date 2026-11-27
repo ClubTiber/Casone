@@ -1,6 +1,6 @@
 // Vista "Esplora": schede con foto, tabella, collegamento con la mappa.
 import { $, $$, esc, icon, nf, fmtEuro, monthsTxt, plural } from './util.js';
-import { D, ZONEL, priceInfo, placeTxt, contactBadges, CARD_FEAT, FEAT_ICON, featLabel, distFrom, STATO, MYSTATUSL, photoFallback, tariffFor, pricePerPerson } from './data.js';
+import { D, ZONEL, priceInfo, placeTxt, contactBadges, CARD_FEAT, FEAT_ICON, featLabel, distFrom, STATO, MYSTATUSL, photoFallback, tariffFor, pricePerPerson, webUsable } from './data.js';
 import * as store from './store.js';
 import * as M from './map.js';
 import { F, RESULT, SORT } from './filters.js';
@@ -130,7 +130,7 @@ function renderTable(list) {
   $('#tablewrap').innerHTML = `<table class="grid"><thead><tr>${COLS.map(([c, l]) => { const on = tableSort && tableSort.k === c; return `<th data-k="${c}" ${on ? `aria-sort="${tableSort.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${l}${on ? (tableSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`; }).join('')}<th></th></tr></thead><tbody>
     ${shown.map(h => {
       const p = priceInfo(h, F.grp, F.notti), d = F.origin ? distFrom(h, F.origin) : null, c = h.c || {};
-      const rec = [((c.tel || []).length ? icon('phone') : ''), ((c.wa || []).length ? icon('whatsapp') : ''), ((c.email || []).length ? icon('mail') : ''), (c.web ? icon('globe') : '')].join('');
+      const rec = [((c.tel || []).length ? icon('phone') : ''), ((c.wa || []).length ? icon('whatsapp') : ''), ((c.email || []).length ? icon('mail') : ''), (webUsable(c) ? icon('globe') : '')].join('');
       return `<tr data-id="${h.id}"><td>${h.foto && h.foto[0] ? `<img class="thumb" src="${esc(h.foto[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : ''}</td>
         <td><a href="#/casa/${h.id}">${esc(h.nome)}</a>${store.isFav(h.id) ? ' ' + icon('bookmark') : ''}</td><td>${esc(h.comune)} (${esc(h.prov)})</td><td>${esc(h.regione)}</td>
         <td class="n">${h.posti || '?'}</td><td class="n">${h.min_p || ''}</td><td class="n">${p.ask ? '–' : p.free ? 'libera' : esc(p.main.replace('€ ', '')) + (h.prezzo && h.prezzo.u === 'casa' ? ' /casa' : '')}</td>

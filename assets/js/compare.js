@@ -1,6 +1,6 @@
 // Pagina "Confronta": fino a 6 case affiancate, con i valori migliori evidenziati.
 import { $, $$, esc, icon, nf, fmtEuro, monthsTxt, download, csv, todayISO, toast } from './util.js';
-import { D, ZONEL, priceInfo, pricePerPerson, FEAT_GROUPS, featLabel, STATO, MYSTATUSL, distFrom, ALLOGL, TRATTL, webLabel } from './data.js';
+import { D, ZONEL, priceInfo, pricePerPerson, FEAT_GROUPS, featLabel, STATO, MYSTATUSL, distFrom, ALLOGL, TRATTL, webLabel, webUsable } from './data.js';
 import * as store from './store.js';
 import { F } from './filters.js';
 
@@ -37,7 +37,7 @@ export function renderCompare() {
   add('Telefono', h => ((h.c || {}).tel || []).map(t => `<a href="tel:${esc(t.n.replace(/[^\d+]/g, ''))}">${esc(t.n)}</a> <span class="small">${t.k === 'cell' ? 'cell.' : 'fisso'}</span>`).join('<br>') || '<span class="no">–</span>');
   add('WhatsApp', h => ((h.c || {}).wa || []).map(w => esc(w)).join('<br>') || '<span class="no">–</span>');
   add('Email', h => ((h.c || {}).email || []).map(e => `<a href="mailto:${esc(e)}">${esc(e)}</a>`).join('<br>') || '<span class="no">–</span>');
-  add('Sito', h => (h.c || {}).web ? `<a href="${esc(h.c.web)}" target="_blank" rel="noopener">${esc(webLabel(h.c.web)).slice(0, 34)}</a>` : '<span class="no">–</span>');
+  add('Sito', h => webUsable(h.c) ? `<a href="${esc(h.c.web)}" target="_blank" rel="noopener">${esc(webLabel(h.c.web)).slice(0, 34)}</a>` : '<span class="no">–</span>');
   grpRow('Spazi e servizi');
   const feats = FEAT_GROUPS.flatMap(g => g[1]).filter(k => H.some(h => h._f.has(k)));
   feats.forEach(k => add(featLabel(k), h => h._f.has(k) ? `<span class="yes">${icon('check')} sì</span>` : '<span class="no">–</span>', null, null, k));

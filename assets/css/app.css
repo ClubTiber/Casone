@@ -331,7 +331,7 @@ dialog.detail[open] { animation: slidein .22s ease-out; }
 .sect { margin-top: 34px; }
 .sect > h2 { font-size: 21px; font-weight: 800; font-stretch: 112%; margin-bottom: 12px; display: flex; align-items: baseline; gap: 10px; }
 .sect > h2 small { font-size: 13px; font-weight: 500; color: var(--muted); font-stretch: 100%; }
-.prose { font-family: var(--f-read); font-size: 17px; line-height: 1.62; max-width: 68ch; }
+.prose { overflow-wrap: break-word; font-family: var(--f-read); font-size: 17px; line-height: 1.62; max-width: 68ch; }
 .prose p { margin: 0 0 .75em; }
 .prose.clamp { max-height: 22em; overflow: hidden; position: relative; }
 .prose.clamp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5em; background: linear-gradient(transparent, var(--paper)); }
@@ -347,7 +347,7 @@ dialog.detail[open] { animation: slidein .22s ease-out; }
 .flist li.no .ic { color: var(--faint); }
 dl.kv { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 14.5px; }
 dl.kv dt { color: var(--muted); }
-dl.kv dd { margin: 0; }
+dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 .cal { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
 .cal .mo h4 { font-size: 13px; font-weight: 700; margin-bottom: 5px; text-transform: capitalize; }
 .cal .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 11px; text-align: center; }
@@ -357,6 +357,7 @@ dl.kv dd { margin: 0; }
 .cal .days .free { background: var(--pine-soft); }
 .cal .days .past { color: var(--faint); opacity: .5; }
 .cal .days .sel { outline: 2px solid var(--ink); outline-offset: -2px; }
+.tscroll { overflow-x: auto; max-width: 100%; }
 .tartable { border-collapse: collapse; font-size: 14px; width: 100%; max-width: 680px; }
 .tartable th, .tartable td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; }
 .tartable td.n { text-align: right; font-variant-numeric: tabular-nums; }
@@ -484,7 +485,7 @@ table.cmp tr.grp th { background: var(--paper); color: var(--ink); font-size: 13
 .hist button:hover { background: var(--red); }
 .hist-x { display: flex; gap: 3px; font-size: 11px; color: var(--muted); }
 .hist-x span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
-.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 18px; }
 .prob-list { display: flex; flex-direction: column; gap: 8px; }
 .prob { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
 .prob a { font-weight: 700; text-decoration: none; }
@@ -536,7 +537,13 @@ table.cmp tr.grp th { background: var(--paper); color: var(--ink); font-size: 13
   .pipeline { display: flex; overflow-x: auto; }
   .pipeline button { flex: none; min-width: 92px; }
   .listnav { position: static; flex-direction: row; overflow-x: auto; }
-  .listnav button.li { white-space: nowrap; }
+  .listnav button.li { white-space: nowrap; flex: none; }
+  .listnav .btn { flex: none; }
+  .listnav > .small { display: none; }
+  table.cmp th[scope=row] { min-width: 104px; width: 104px; font-size: 12px; padding: 8px; }
+  table.cmp th, table.cmp td { min-width: 170px; }
+  table.cmp thead th:first-child { min-width: 104px; width: 104px; }
+  table.cmp img { height: 100px; }
   .lrow { grid-template-columns: 84px minmax(0, 1fr); }
   .lrow .th { width: 84px; height: 66px; }
   .lrow .mine { grid-column: 1 / -1; }

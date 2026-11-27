@@ -136,4 +136,20 @@ async function route() {
   if (mapReady) M.invalidate();
 }
 
+// Le foto di caseinautogestione.it a volte vengono rifiutate (errore 415) quando le chiede un altro sito:
+// si riprova con calma e con le altre misure che il portale offre, e si nasconde la foto solo se falliscono tutte.
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement)) return;
+  const src = img.getAttribute('src') || '';
+  if (!/caseinautogestione\.it\/image\.php/.test(src)) return;
+  const n = +(img.dataset.retry || 0);
+  if (n >= 4) return; // lascia agire il gestore della pagina (nasconde la foto)
+  e.stopPropagation();
+  img.dataset.retry = n + 1;
+  const base = src.replace(/\?(part|resize)\([^)]*\)$/, '');
+  const next = [src, base + '?part(800x480)', base + '?resize(1280x768)', base + '?part(480x300)'][n];
+  setTimeout(() => { if (img.isConnected) img.src = next; }, 500 + n * 700);
+}, true);
+
 boot();
