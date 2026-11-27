@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Casone · case per gruppi in autogestione</title>
+<meta name="description" content="Oltre 700 case per gruppi in autogestione in tutta Italia: mappa, filtri, foto, recapiti, prezzi, liste personali e confronto.">
+<meta name="theme-color" content="#f2f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121815" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="data/houses.json" as="fetch" crossorigin>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="vendor/markercluster/MarkerCluster.css">
+<link rel="stylesheet" href="assets/css/app.css">
+<script>
+  // tema scelto dall'utente (prima del rendering, per evitare lampi)
+  try { const t = JSON.parse(localStorage.getItem('casone:v1') || '{}')?.prefs?.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Vai ai risultati</a>
+<div id="sprite" hidden></div>
+
+<header class="top" role="banner">
+  <a class="brand" href="#/" aria-label="Casone, torna alla ricerca">
+    <span class="blaze" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="brand-name">Casone</span>
+    <span class="brand-sub">case per gruppi in autogestione</span>
+  </a>
+  <form class="search" role="search" id="searchForm">
+    <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+    <input type="search" id="q" placeholder="Cerca per nome, comune, provincia o parola (es. falò, Assisi, scout)" autocomplete="off" aria-label="Cerca">
+  </form>
+  <nav class="nav" aria-label="Sezioni">
+    <a href="#/" data-nav="explore"><svg class="ic"><use href="#i-map"/></svg><span>Esplora</span></a>
+    <a href="#/liste" data-nav="lists"><svg class="ic"><use href="#i-bookmark"/></svg><span>Le mie liste</span><b class="badge" id="navListCount" hidden></b></a>
+    <a href="#/confronta" data-nav="compare"><svg class="ic"><use href="#i-columns"/></svg><span>Confronta</span><b class="badge" id="navCmpCount" hidden></b></a>
+    <a href="#/dati" data-nav="data"><svg class="ic"><use href="#i-chart"/></svg><span>Dati</span></a>
+    <button type="button" class="iconbtn" id="themeBtn" aria-label="Cambia tema chiaro/scuro"><svg class="ic"><use href="#i-moon"/></svg></button>
+  </nav>
+</header>
+
+<main id="main">
+  <!-- ESPLORA -->
+  <section class="view explore" id="view-explore" data-mode="split">
+    <aside class="filters" id="filters" aria-label="Filtri">
+      <div class="filters-head">
+        <h2>Filtri</h2>
+        <button type="button" class="link" id="resetAll">Azzera</button>
+        <button type="button" class="iconbtn only-mobile" id="closeFilters" aria-label="Chiudi filtri"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="filters-body" id="filtersBody"></div>
+      <div class="filters-foot only-mobile"><button type="button" class="btn primary block" id="showResults">Mostra risultati</button></div>
+    </aside>
+    <div class="results" id="results">
+      <div class="toolbar" id="toolbar">
+        <button type="button" class="btn only-mobile" id="openFilters"><svg class="ic"><use href="#i-filter"/></svg> Filtri <b class="badge" id="fCount" hidden></b></button>
+        <div class="count" id="count" aria-live="polite"></div>
+        <div class="spacer"></div>
+        <label class="sortlab"><span class="vh">Ordina per</span>
+          <select id="sort">
+            <option value="rel">Più complete</option>
+            <option value="posti_asc">Posti: dal più piccolo</option>
+            <option value="posti_desc">Posti: dal più grande</option>
+            <option value="prezzo">Prezzo più basso</option>
+            <option value="dist">Più vicine a me</option>
+            <option value="alt">Altitudine</option>
+            <option value="nome">Nome A–Z</option>
+            <option value="regione">Regione e comune</option>
+            <option value="foto">Più foto</option>
+          </select>
+        </label>
+        <div class="seg" role="group" aria-label="Vista">
+          <button type="button" data-mode="split" aria-pressed="true" title="Schede e mappa"><svg class="ic"><use href="#i-grid"/></svg><span>Schede</span></button>
+          <button type="button" data-mode="table" aria-pressed="false" title="Tabella"><svg class="ic"><use href="#i-table"/></svg><span>Tabella</span></button>
+          <button type="button" data-mode="map" aria-pressed="false" title="Solo mappa"><svg class="ic"><use href="#i-map"/></svg><span>Mappa</span></button>
+        </div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="cards" id="cards"></div>
+      <div class="tablewrap" id="tablewrap" hidden></div>
+      <div class="more" id="more"></div>
+    </div>
+    <div class="mapcol" id="mapcol">
+      <div id="map" role="region" aria-label="Mappa delle case"></div>
+      <div class="map-tools">
+        <label class="maptoggle"><input type="checkbox" id="areaFilter"> Cerca solo nell'area visibile</label>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <button type="button" class="fab only-mobile" id="mobileToggle"><svg class="ic"><use href="#i-map"/></svg><span>Mappa</span></button>
+  </section>
+
+  <!-- LISTE -->
+  <section class="view page" id="view-lists" hidden></section>
+  <!-- CONFRONTO -->
+  <section class="view page" id="view-compare" hidden></section>
+  <!-- DATI -->
+  <section class="view page" id="view-data" hidden></section>
+</main>
+
+<!-- dettaglio casa -->
+<dialog class="detail" id="detail" aria-labelledby="dTitle"></dialog>
+<!-- galleria a schermo intero -->
+<dialog class="lightbox" id="lightbox" aria-label="Foto"></dialog>
+<!-- finestre varie (import, nuova lista, richiesta) -->
+<dialog class="modal" id="modal"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/markercluster/leaflet.markercluster.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
