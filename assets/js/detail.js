@@ -65,7 +65,7 @@ function render(h, det) {
 
   // ---- recapiti
   const c = h.c || {};
-  const tel = (c.tel || []).map(x => `<a class="crow" href="${esc(phoneHref(x.n))}">${icon(x.k === 'cell' ? 'smartphone' : 'phone')}<span class="cv">${esc(x.n)}</span><span class="ck">${x.k === 'cell' ? 'cellulare' : x.k === 'fisso' ? 'fisso' : 'telefono'}${x.src && x.src.includes('sito') && !x.src.includes('scheda') ? '<br>dal sito web' : ''}</span></a>`);
+  const tel = (c.tel || []).map(x => `<a class="crow" href="${esc(phoneHref(x.n))}">${icon(x.k === 'cell' ? 'smartphone' : 'phone')}<span class="cv">${esc(x.n)}</span><span class="ck">${x.k === 'cell' ? 'cellulare' : x.k === 'fisso' ? 'fisso' : 'telefono'}${x.src && !x.src.includes('scheda') ? (x.src.includes('sito') ? '<br>dal sito web' : '<br>trovato sul web') : ''}</span></a>`);
   const wa = (c.wa || []).map(x => `<a class="crow wa" href="${esc(waHref(x))}" target="_blank" rel="noopener">${icon('whatsapp')}<span class="cv">${esc(x)}</span><span class="ck">WhatsApp</span></a>`);
   const em = (c.email || []).map(x => `<a class="crow" href="mailto:${esc(x)}">${icon('mail')}<span class="cv">${esc(x)}</span><span class="ck">email</span></a>`);
   const web = !c.web ? '' : webUsable(c)
@@ -82,6 +82,7 @@ function render(h, det) {
   const g = 'https://www.google.com/search?q=' + encodeURIComponent(`"${h.nome}" ${h.comune} telefono`);
   const contactBox = `<div class="box"><h3>${icon('phone')} Contatti</h3><div class="clist">${wa.join('')}${tel.join('')}${em.join('')}${web}${soc.join('')}${portal}
       ${nothing ? `<a class="crow" href="${esc(g)}" target="_blank" rel="noopener">${icon('search')}<span class="cv">Cerca i recapiti sul web</span><span class="ck">Google</span></a>` : ''}</div>
+      ${c.fonte ? `<p class="small" style="margin:8px 0 0">Alcuni recapiti non sono nella scheda del portale: li abbiamo trovati sul web (${esc(c.fonte)}).</p>` : ''}
       <button type="button" class="btn primary block" style="margin-top:12px" data-ask>${icon('send')} Prepara la richiesta di disponibilità</button>
       ${(det.cia_contatto || []).length && nothing ? '<p class="small" style="margin:8px 0 0">Su caseinautogestione.it i recapiti non sono pubblici: si scrive al gestore dal portale (o al portale: 049 9813241).</p>' : ''}</div>`;
 

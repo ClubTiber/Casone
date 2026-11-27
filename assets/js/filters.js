@@ -14,7 +14,13 @@ export function defaults() {
 export let F = defaults();
 let onApply = () => {};
 export function setOnApply(fn) { onApply = fn; }
-export function setFilters(obj, silent) { F = { ...defaults(), ...(obj || {}) }; F.area = null; if (!silent) { syncInputs(); apply(); } }
+export function setFilters(obj, silent) {
+  F = { ...defaults(), ...(obj || {}) }; F.area = null;
+  // con un punto di partenza ha senso ordinare per distanza
+  if (F.origin) SORT = 'dist'; else if (SORT === 'dist') SORT = 'rel';
+  const s = document.querySelector('#sort'); if (s) s.value = SORT;
+  if (!silent) { syncInputs(); apply(); }
+}
 
 // ------------------------------------------------------------ predicati
 const has = (arr, v) => (arr || []).includes(v);

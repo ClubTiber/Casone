@@ -337,7 +337,9 @@ def main():
             if not (8 <= len(n) <= 11) or n[0] not in "038": return
             if n not in phones: phones[n] = {"n": fmt_phone(n), "k": phone_kind(n), "src": [src]}
             elif src not in phones[n]["src"]: phones[n]["src"].append(src)
-        for t in h["contatti"].get("tel", []) or []: addp(t, "scheda")
+        # i recapiti di base con "fonte" sono stati trovati con ricerche sul web, non nella scheda del portale
+        base_src = "web" if h["contatti"].get("fonte") else "scheda"
+        for t in h["contatti"].get("tel", []) or []: addp(t, base_src)
         for t in (por or {}).get("tel", []): addp(t, "scheda")
         if site_ok:
             for t in web.get("tel", []): addp(t, "sito")
@@ -520,7 +522,7 @@ def main():
             "foto": [(f["b"] if f["o"] == "OR" else f["s"]) for f in foto[:6]], "nf": len(foto), "vid": len(video),
             "c": {k: v for k, v in {
                 "tel": [p for p in phones.values()], "wa": list(wa.values()), "email": emails, "web": webu, "webs": web_state,
-                "form": form_or, "social": social[:4]}.items() if v},
+                "form": form_or, "social": social[:4], "fonte": h["contatti"].get("fonte")}.items() if v},
             "src": sorted({f["s"] for f in fonti}),
             "occ": ranges(occ), "tar": tar or None,
             "stato": stato, "nuovo": bool(h.get("nuovo")), "cin": cin, "visite": (por or {}).get("visite"),
