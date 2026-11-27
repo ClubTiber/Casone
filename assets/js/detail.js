@@ -3,7 +3,8 @@ import { $, $$, esc, icon, nf, fmtEuro, monthsTxt, MON, MONL, hav, toast, fmtDat
 import { D, loadDetails, ZONEL, AMB, TRATTL, ALLOGL, DISTL, FEAT_GROUPS, featLabel, STATO, SRC, MYSTATUS, priceInfo, placeTxt, phoneHref, waHref, webLabel, distFrom, tariffFor, webUsable } from './data.js';
 import * as store from './store.js';
 import * as M from './map.js';
-import { F } from './filters.js';
+import { F, stayNights } from './filters.js';
+import { listsModal } from './lists.js';
 
 const dlg = () => $('#detail');
 let current = null, mini = null, onClose = () => {};
@@ -34,7 +35,7 @@ export const isOpen = () => dlg().open;
 
 function render(h, det) {
   const n = store.note(h.id);
-  const p = priceInfo(h, F.grp, F.notti);
+  const p = priceInfo(h, F.grp, stayNights());
   const photos = det.foto || (h.foto || []).map(s => ({ s, b: s }));
   const nPh = photos.length;
   const mosaic = nPh ? `<div class="mosaic n${Math.min(nPh, 5)}">${photos.slice(0, 5).map((f, i) => `<button type="button" data-lb="${i}" aria-label="Apri foto ${i + 1}"><img src="${esc(i === 0 ? f.b : f.s)}" alt="Foto ${i + 1} di ${esc(h.nome)}" loading="${i ? 'lazy' : 'eager'}" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">${f.o === 'sito' ? '<span class="src-badge">dal sito</span>' : ''}</button>`).join('')}
@@ -57,7 +58,7 @@ function render(h, det) {
     <div class="fact"><span class="l">Posti letto</span><span class="v">${h.posti || '?'}</span>${h.posti_alt ? `<span class="s">${h.posti_alt} secondo l'altro portale</span>` : ''}${h.camere || h.bagni ? `<span class="s">${h.camere ? h.camere + ' camere' : ''}${h.camere && h.bagni ? ' · ' : ''}${h.bagni ? h.bagni + ' bagni' : ''}</span>` : ''}</div>
     <div class="fact"><span class="l">Prezzo</span>${p.ask ? `<span class="v ask">da chiedere</span><span class="s">non indicato nelle schede</span>` : `<span class="v">${esc(p.main)}</span><span class="s">${esc([p.unit, p.sub].filter(Boolean).join(' · '))}</span>`}
       ${t && (t.auto || t.semi) ? `<span class="s"><b>Nelle tue date: € ${fmtEuro(t.auto || t.semi)}</b> ${t.auto ? 'autogestione' : 'semigestione'}</span>` : ''}
-      ${p.est ? `<span class="s">≈ € ${nf.format(Math.round(p.est))} per ${F.grp} persone${F.notti ? ' × ' + F.notti + ' notti' : ''}</span>` : ''}</div>
+      ${p.est ? `<span class="s">≈ € ${nf.format(Math.round(p.est))} per ${F.grp} persone${stayNights() ? ' e ' + stayNights() + ' notti' : ' a notte'}</span>` : ''}</div>
     <div class="fact"><span class="l">Minimo</span><span class="v">${h.min_p ? h.min_p + ' <small>persone</small>' : '–'}</span><span class="s">${h.min_n ? 'almeno ' + h.min_n + (h.min_n === 1 ? ' notte' : ' notti') : (det.minimo ? esc(det.minimo).slice(0, 80) : 'nessun minimo indicato')}</span></div>
     <div class="fact"><span class="l">Aperta</span><span class="v" style="font-size:17px">${h.mesi ? esc(monthsTxt(h.mesi)) : '<span class="ask" style="font-style:italic;color:var(--muted)">non indicato</span>'}</span>${h.mesi && h.mesi.length < 12 ? `<div class="months">${MON.map((m, i) => `<span class="${h.mesi.includes(i + 1) ? 'on' : ''}">${m[0].toUpperCase()}</span>`).join('')}</div>` : ''}</div>
     ${dist != null ? `<div class="fact"><span class="l">Da ${esc(F.origin.label)}</span><span class="v">${nf.format(Math.round(dist))} <small>km in linea d'aria</small></span></div>` : ''}
@@ -80,32 +81,34 @@ function render(h, det) {
   ].join('');
   const nothing = !tel.length && !wa.length && !em.length;
   const g = 'https://www.google.com/search?q=' + encodeURIComponent(`"${h.nome}" ${h.comune} telefono`);
-  const contactBox = `<div class="box"><h3>${icon('phone')} Contatti</h3><div class="clist">${wa.join('')}${tel.join('')}${em.join('')}${web}${soc.join('')}${portal}
+  const contactBox = `<div class="box contact"><h3>${icon('send')} Chiedi se è libera</h3>
+      <p class="small" style="margin:-4px 0 10px">${nothing ? 'Questa casa non ha telefono né email pubblici: prepara il messaggio e incollalo nel modulo del portale.' : 'Prepara il messaggio con persone e date, poi mandalo con un tocco.'}</p>
+      <button type="button" class="btn primary block" data-ask>${icon('send')} Prepara la richiesta</button>
+      <div class="clist" style="margin-top:12px">${wa.join('')}${tel.join('')}${em.join('')}${web}${soc.join('')}${portal}
       ${nothing ? `<a class="crow" href="${esc(g)}" target="_blank" rel="noopener">${icon('search')}<span class="cv">Cerca i recapiti sul web</span><span class="ck">Google</span></a>` : ''}</div>
       ${c.fonte ? `<p class="small" style="margin:8px 0 0">Alcuni recapiti non sono nella scheda del portale: li abbiamo trovati sul web (${esc(c.fonte)}).</p>` : ''}
-      <button type="button" class="btn primary block" style="margin-top:12px" data-ask>${icon('send')} Prepara la richiesta di disponibilità</button>
       ${(det.cia_contatto || []).length && nothing ? '<p class="small" style="margin:8px 0 0">Su caseinautogestione.it i recapiti non sono pubblici: si scrive al gestore dal portale (o al portale: 049 9813241).</p>' : ''}</div>`;
 
   // ---- mie note
   const lists = store.lists();
   const stars = [1, 2, 3, 4, 5].map(i => `<button type="button" data-star="${i}" class="${(n.rating || 0) >= i ? 'on' : ''}" aria-label="${i} stelle">${icon('star')}</button>`).join('');
-  const mine = `<div class="box mine"><h3>${icon('note')} Le mie note</h3>
+  const mine = `<div class="box mine"><h3>${icon('bookmark')} Nelle mie case</h3>
     <div class="listtoggles">${lists.map(l => `<button type="button" class="pill" data-list="${l.id}" aria-pressed="${l.ids.includes(h.id)}"><span class="sw" style="background:${esc(l.color)}"></span>${esc(l.name)}</button>`).join('')}<button type="button" class="pill" data-newlist>${icon('plus')} Nuova lista</button></div>
-    <label class="lab" for="my-status">Stato del contatto</label><select id="my-status" style="width:100%">${MYSTATUS.map(([k, l]) => `<option value="${k}" ${(n.status || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <label class="lab" for="my-status">A che punto siete</label><select id="my-status" style="width:100%">${MYSTATUS.map(([k, l]) => `<option value="${k}" ${(n.status || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <label class="lab">Il mio voto</label><span class="stars">${stars}</span>
     <label class="lab" for="my-quote">Preventivo / prezzo concordato</label><input type="text" id="my-quote" value="${esc(n.quote || '')}" placeholder="es. € 14 a persona + riscaldamento">
     <label class="lab" for="my-note">Appunti</label><textarea id="my-note" placeholder="es. Telefonato il 3/12, richiamare lunedì; ok per 40 persone">${esc(n.note || '')}</textarea>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="btn small" data-cmp aria-pressed="${store.inCompare(h.id)}">${icon('columns')} ${store.inCompare(h.id) ? 'Nel confronto' : 'Confronta'}</button>
-    <button type="button" class="btn small" data-share>${icon('share')} Condividi</button></div>
-    ${n.updated ? `<p class="small" style="margin:8px 0 0">Aggiornato il ${fmtDate(n.updated.slice(0, 10))}. Restano solo in questo browser: esportale da “Le mie liste”.</p>` : '<p class="small" style="margin:8px 0 0">Note, voti e liste restano in questo browser; puoi esportarli e reimportarli.</p>'}</div>`;
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="btn small" data-share>${icon('share')} Condividi la scheda</button></div>
+    ${n.updated ? `<p class="small" style="margin:8px 0 0">Aggiornato il ${fmtDate(n.updated.slice(0, 10))}. Resta in questo browser: per passarlo ad altri usa Esporta in Le mie case.</p>` : '<p class="small" style="margin:8px 0 0">Liste, voti e appunti restano in questo browser.</p>'}</div>`;
 
   // ---- descrizioni
   const descr = [];
   if (det.descr_or && det.descr_or.length) descr.push([`Dalla scheda di ${SRC.OR[0]}`, det.descr_or]);
   if (det.descr_cia && det.descr_cia.length) descr.push([`Dalla scheda di ${SRC.CIA[0]}`, det.descr_cia]);
   if (det.sito && det.sito.testo && det.sito.testo.length) descr.push([`Dal sito web della casa (${webLabel(det.sito.url)})`, det.sito.testo]);
-  const descrHtml = descr.length ? descr.map(([lab, ps], i) => `<div class="${i ? 'sect' : ''}" style="${i ? 'margin-top:22px' : ''}"><div class="prose ${ps.join(' ').length > 1400 ? 'clamp' : ''}" data-prose>${ps.map(x => `<p>${esc(x)}</p>`).join('')}</div>
-      ${ps.join(' ').length > 1400 ? '<button type="button" class="link" data-expand>Leggi tutto</button>' : ''}<p class="srcnote">${esc(lab)}</p></div>`).join('')
+  const oneDescr = ([lab, ps]) => `<div class="prose ${ps.join(' ').length > 900 ? 'clamp' : ''}" data-prose>${ps.map(x => `<p>${esc(x)}</p>`).join('')}</div>
+      ${ps.join(' ').length > 900 ? '<button type="button" class="link" data-expand>Leggi tutto</button>' : ''}<p class="srcnote">${esc(lab)}</p>`;
+  const descrHtml = descr.length ? oneDescr(descr[0]) + (descr.length > 1 ? `<details class="more-descr"><summary>${descr.length === 2 ? 'Un’altra descrizione' : `Altre ${descr.length - 1} descrizioni`} (${descr.slice(1).map(d => d[0].replace(/^Dal(la)? (scheda di |sito web della casa )?/, '').replace(/^\(|\)$/g, '')).join(', ')})</summary>${descr.slice(1).map(d => `<div style="margin-top:14px">${oneDescr(d)}</div>`).join('')}</details>` : '')
     : (det.sintesi ? `<div class="prose"><p>${esc(det.sintesi)}</p></div>` : '<p class="small">Nessuna descrizione nelle schede.</p>');
 
   // ---- servizi
@@ -178,7 +181,7 @@ function render(h, det) {
 
   const vid = (det.video || []);
   return `<div class="d-wrap"><div class="d-bar"><button type="button" class="btn quiet" data-close>${icon('chevron-left')} Torna</button><span class="t">${esc(h.nome)}</span>
-      <button type="button" class="iconbtn" data-favtop aria-pressed="${store.isFav(h.id)}" title="Preferita" aria-label="Preferita">${icon('bookmark')}</button>
+      <button type="button" class="btn small" data-favtop aria-pressed="${store.savedIds().has(h.id)}">${icon('bookmark')}<span>${store.savedIds().has(h.id) ? 'Salvata' : 'Salva'}</span></button>
       <button type="button" class="iconbtn" data-print title="Stampa" aria-label="Stampa">${icon('printer')}</button>
       <button type="button" class="iconbtn" data-close aria-label="Chiudi">${icon('x')}</button></div>
     <div class="d-body">
@@ -189,24 +192,31 @@ function render(h, det) {
           <div class="d-chips">${chips}</div>
           ${h.stato === 'chiusa' ? `<p class="badbox" style="margin-top:14px">${icon('alert')} ${esc((sig.find(s => s.p < 0) || {}).t || 'Probabilmente chiusa')}. Verifica prima di organizzare.</p>` : h.stato === 'dubbia' ? `<p class="warnbox" style="margin-top:14px">${icon('alert')} ${esc((sig.find(s => s.p < 0) || {}).t || 'Da verificare')}: conviene telefonare prima.</p>` : ''}
           ${facts}
-          <section class="sect"><h2>Descrizione</h2>${descrHtml}</section>
-          <section class="sect"><h2>Spazi e servizi</h2>${featHtml}</section>
-          ${ciaHtml ? `<section class="sect"><h2>Dettagli della casa <small>da caseinautogestione.it</small></h2>${ciaHtml}</section>` : ''}
-          <section class="sect"><h2>Prezzi e condizioni</h2>${priceSect}</section>
-          ${calHtml ? `<section class="sect"><h2>Disponibilità <small>giorni già prenotati secondo il calendario del portale</small></h2>${calHtml}</section>` : ''}
+          <nav class="secnav" aria-label="Sezioni della scheda">${[['s-descr', 'Descrizione'], ['s-serv', 'Spazi e servizi'], ['s-prezzi', 'Prezzi'], calHtml ? ['s-cal', 'Calendario'] : null, ['s-dove', 'Dove si trova'], ['s-info', 'Tutto il resto'], ['s-contatti', 'Contatti e note', 'm']].filter(Boolean).map(([id, l, m]) => [id, l, m]).map(([id, l, m]) => `<a href="#${id}" data-jump="${id}" class="${m ? 'only-mobile' : ''}">${l}</a>`).join('')}</nav>
+          <section class="sect" id="s-descr"><h2>Descrizione</h2>${descrHtml}</section>
+          <section class="sect" id="s-serv"><h2>Spazi e servizi</h2>${featHtml}
+            ${ciaHtml ? `<details class="sub"><summary>Più dettagli: cucina, accessi, divieti <small>da caseinautogestione.it</small></summary><div style="margin-top:14px">${ciaHtml}</div></details>` : ''}</section>
+          <section class="sect" id="s-prezzi"><h2>Prezzi e condizioni</h2>${priceSect}</section>
+          ${calHtml ? `<section class="sect" id="s-cal"><h2>Disponibilità <small>giorni già prenotati secondo il calendario del portale</small></h2>${calHtml}</section>` : ''}
           ${vid.length ? `<section class="sect"><h2>Video</h2>${vid.map(v => `<div class="video" style="margin-bottom:12px"><button type="button" data-yt="${esc(v)}" style="background-image:url(https://i.ytimg.com/vi/${esc(v)}/hqdefault.jpg)"><span>${icon('play')} Guarda il video</span></button></div>`).join('')}<p class="srcnote">Il video si carica da YouTube solo quando lo avvii.</p></section>` : ''}
-          <section class="sect"><h2>Dove si trova</h2>
+          <section class="sect" id="s-dove"><h2>Dove si trova</h2>
             <div class="mini-map" id="miniMap"></div>
             <p class="small" style="margin-top:8px">${h.geo === 'esatta' ? 'Posizione indicata nella scheda del portale.' : h.geo === 'indirizzo' ? "Posizione ricavata dall'indirizzo." : 'Posizione approssimata: centro del comune.'} <a href="${esc(gmaps)}" target="_blank" rel="noopener">Apri in Google Maps ${icon('external')}</a> · <a href="${esc(dir)}" target="_blank" rel="noopener">Indicazioni stradali ${icon('external')}</a></p>
             ${distHtml ? `<p style="margin-top:8px">${distHtml}</p>` : ''}
           </section>
-          ${kv.length ? `<section class="sect"><h2>Tutte le informazioni</h2><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></section>` : ''}
-          <section class="sect"><h2>È ancora attiva? <small>verifica del ${fmtDate(D.META.date)}</small></h2>${verify}</section>
+          <section class="sect" id="s-info"><h2>Tutto il resto</h2>
+            ${kv.length ? `<details class="sub"><summary>Tutte le informazioni delle schede <small>${kv.length} voci</small></summary><dl class="kv" style="margin-top:14px">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></details>` : ''}
+            <details class="sub" ${h.stato === 'dubbia' || h.stato === 'chiusa' ? 'open' : ''}><summary>È ancora attiva? <small>${esc(st.l.toLowerCase())}, verifica del ${fmtDate(D.META.date)}</small></summary><div style="margin-top:14px">${verify}</div></details>
+          </section>
           <section class="sect"><h2>Case vicine</h2>${coll}<div class="near">${near.map(([x, km]) => `<a href="#/casa/${x.id}">${x.foto && x.foto[0] ? `<img src="${esc(x.foto[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="ni"></span>'}<span><b>${esc(x.nome)}</b><small>${x.posti || '?'} posti · ${km < 1 ? 'meno di 1 km' : nf.format(Math.round(km)) + ' km'}</small></span></a>`).join('')}</div></section>
         </div>
-        <aside class="side">${contactBox}${mine}</aside>
+        <aside class="side" id="s-contatti">${contactBox}${mine}</aside>
       </div>
-    </div></div>`;
+    </div>
+    <div class="d-cta only-mobile"><button type="button" class="btn primary" data-ask>${icon('send')} Prepara la richiesta</button>
+      ${(c.wa || [])[0] ? `<a class="btn" href="${esc(waHref(c.wa[0]))}" target="_blank" rel="noopener" aria-label="WhatsApp">${icon('whatsapp')}</a>` : ''}
+      ${(c.tel || [])[0] ? `<a class="btn" href="${esc(phoneHref(c.tel[0].n))}" aria-label="Telefona">${icon('phone')}</a>` : ''}
+      <a class="btn" href="#s-contatti" data-jump="s-contatti" aria-label="Tutti i contatti e le mie note">${icon('bookmark')}</a></div></div>`;
 }
 
 const webState = { online: 'sito online', parcheggiato: 'dominio parcheggiato', dominio_inesistente: 'il dominio non esiste più', pagina_inesistente: 'pagina non trovata', non_verificabile: 'non verificabile da qui', reindirizzato: 'ora rimanda a un altro sito' };
@@ -250,22 +260,25 @@ function bind(h, det) {
   d.querySelectorAll('[data-yt]').forEach(b => b.onclick = () => { b.parentElement.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(b.dataset.yt)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="Video di ${esc(h.nome)}"></iframe>`; });
   d.querySelector('[data-print]').onclick = () => window.print();
   const ft = d.querySelector('[data-favtop]');
-  ft.onclick = () => { const on = store.toggleList('fav', h.id); ft.setAttribute('aria-pressed', on); syncListPills(h); M.refreshIcons(); toast(on ? 'Salvata nelle Preferite' : 'Tolta dalle Preferite'); };
-  d.querySelector('[data-ask]').onclick = () => askModal(h);
-  d.querySelectorAll('[data-list]').forEach(b => b.onclick = () => { const on = store.toggleList(b.dataset.list, h.id); b.setAttribute('aria-pressed', on); ft.setAttribute('aria-pressed', store.isFav(h.id)); M.refreshIcons(); });
+  const syncFt = () => { const on = store.savedIds().has(h.id); ft.setAttribute('aria-pressed', on); ft.querySelector('span').textContent = on ? 'Salvata' : 'Salva'; syncListPills(h); M.refreshIcons(); };
+  ft.onclick = () => {
+    if (store.savedIds().has(h.id)) { listsModal(h.id, syncFt); return; }
+    store.toggleList('fav', h.id, true); syncFt(); toast('Salvata nelle Preferite', { label: 'Altre liste', run: () => listsModal(h.id, syncFt) });
+  };
+  d.querySelectorAll('[data-jump]').forEach(a => a.onclick = e => { e.preventDefault(); const t = d.querySelector('#' + a.dataset.jump); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  d.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => askModal(h));
+  d.querySelectorAll('[data-list]').forEach(b => b.onclick = () => { const on = store.toggleList(b.dataset.list, h.id); b.setAttribute('aria-pressed', on); syncFt(); });
   d.querySelector('[data-newlist]').onclick = () => {
     const name = prompt('Nome della nuova lista (es. "Campo estivo 2027")'); if (!name) return;
     const l = store.createList(name); store.toggleList(l.id, h.id, true); openDetail(h.id); toast(`Creata la lista "${l.name}"`);
   };
-  d.querySelector('#my-status').onchange = e => store.setNote(h.id, { status: e.target.value });
+  d.querySelector('#my-status').onchange = e => { store.setNote(h.id, { status: e.target.value }); syncFt(); };
   d.querySelectorAll('[data-star]').forEach(b => b.onclick = () => {
     const cur = store.note(h.id).rating || 0, v = +b.dataset.star === cur ? 0 : +b.dataset.star;
     store.setNote(h.id, { rating: v }); d.querySelectorAll('[data-star]').forEach(x => x.classList.toggle('on', +x.dataset.star <= v));
   });
   let tq; d.querySelector('#my-quote').oninput = e => { clearTimeout(tq); tq = setTimeout(() => store.setNote(h.id, { quote: e.target.value }), 300); };
   let tn; d.querySelector('#my-note').oninput = e => { clearTimeout(tn); tn = setTimeout(() => store.setNote(h.id, { note: e.target.value }), 300); };
-  const cb = d.querySelector('[data-cmp]');
-  cb.onclick = () => { const on = store.toggleCompare(h.id); if (on === null) return toast('Puoi confrontare al massimo 6 case.'); cb.setAttribute('aria-pressed', on); cb.innerHTML = `${icon('columns')} ${on ? 'Nel confronto' : 'Confronta'}`; };
   d.querySelector('[data-share]').onclick = async () => {
     const url = location.origin + location.pathname + '#/casa/' + h.id;
     if (navigator.share) { try { await navigator.share({ title: h.nome, text: `${h.nome} – ${h.comune} (${h.posti} posti)`, url }); return; } catch (e) { } }
@@ -302,12 +315,14 @@ export function lightbox(photos, start, h) {
 }
 
 // ------------------------------------------------------------ richiesta di disponibilità
-export function askModal(h) {
+export function askModal(h, after) {
   const m = $('#modal'), c = h.c || {};
   const P = store.state().prefs;
-  const draft = { gruppo: P.ask_gruppo || '', referente: P.ask_referente || '', tel: P.ask_tel || '', persone: F.grp || '', da: F.da || '', a: F.a || '', tipo: P.ask_tipo || 'autogestione', extra: '' };
+  const draft = { gruppo: P.ask_gruppo || '', referente: P.ask_referente || '', tel: P.ask_tel || '', persone: F.grp || '', da: F.da || '', a: F.a || '', tipo: P.ask_tipo || 'autogestione', extra: '',
+    // senza date precise: il periodo scelto nella ricerca (es. "ad agosto, per 3 notti")
+    periodo: [F.mesi.length ? (/^[aeiou]/.test(MONL[F.mesi[0] - 1]) ? 'ad ' : 'a ') + [...F.mesi].sort((a, b) => a - b).map(m => MONL[m - 1]).join(' o ') : '', stayNights() ? `per ${stayNights()} notti` : ''].filter(Boolean).join(', ') };
   const text = d => {
-    const per = d.da ? (d.a ? `dal ${fmtDate(d.da, { day: 'numeric', month: 'long', year: 'numeric' })} al ${fmtDate(d.a, { day: 'numeric', month: 'long', year: 'numeric' })}${nightsBetween(d.da, d.a) > 0 ? ` (${nightsBetween(d.da, d.a)} notti)` : ''}` : `a partire dal ${fmtDate(d.da, { day: 'numeric', month: 'long', year: 'numeric' })}`) : 'nelle date da concordare';
+    const per = d.da ? (d.a ? `dal ${fmtDate(d.da, { day: 'numeric', month: 'long', year: 'numeric' })} al ${fmtDate(d.a, { day: 'numeric', month: 'long', year: 'numeric' })}${nightsBetween(d.da, d.a) > 0 ? ` (${nightsBetween(d.da, d.a)} notti)` : ''}` : `a partire dal ${fmtDate(d.da, { day: 'numeric', month: 'long', year: 'numeric' })}`) : (d.periodo ? `${d.periodo} (date da concordare)` : 'nelle date da concordare');
     return `Buongiorno,\n${d.gruppo ? `scrivo per ${d.gruppo}: ` : ''}siamo un gruppo di ${d.persone || '…'} persone e cerchiamo una casa in ${d.tipo} ${per}.\n\nVorremmo sapere se "${h.nome}" a ${h.comune} è disponibile e a quali condizioni: prezzo a persona o per la casa, utenze e riscaldamento, caparra, biancheria, pulizie finali.${d.extra ? '\n\n' + d.extra : ''}\n\nGrazie, un saluto\n${d.referente || ''}${d.tel ? '\n' + d.tel : ''}`;
   };
   const draw = () => {
@@ -341,7 +356,7 @@ export function askModal(h) {
     m.querySelector('[data-done]').onclick = () => {
       const n = store.note(h.id);
       store.setNote(h.id, { status: 'contattata', note: [n.note, `Richiesta inviata il ${fmtDate(todayISO())} per ${draft.persone || '?'} persone${draft.da ? ' dal ' + fmtDate(draft.da) : ''}.`].filter(Boolean).join('\n') });
-      m.close(); if (isOpen()) openDetail(h.id); toast('Segnata come contattata');
+      m.close(); if (isOpen()) openDetail(h.id); if (after) after(); toast('Segnata come contattata: la trovi in Le mie case');
     };
   };
   draw(); m.showModal();

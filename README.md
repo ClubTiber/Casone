@@ -8,31 +8,49 @@ e arricchiti con l'analisi del sito web di ogni casa.
 
 È un sito statico (HTML, CSS e JavaScript senza build): si pubblica così com'è su GitHub Pages.
 
-## Cosa si può fare
+## Come è organizzato
 
-- **Mappa e schede con foto** (oltre 4.000 foto da portali e siti), vista a tabella e solo mappa.
-- **Filtri con conteggi in tempo reale**: persone e notti, date di arrivo e partenza (con il
-  calendario delle prenotazioni di caseinautogestione.it), distanza dal proprio comune o dalla
-  propria posizione, zona e ambiente (isolata, bosco, fiume…), quota, regione, prezzo massimo,
-  posti, oltre 40 servizi (cucina industriale, sala, falò, tende, campo da calcio, accessibilità…),
-  tipo di alloggi e di gestione, mesi di apertura, servizi vicini, profilo ospiti, tipo di soggiorno,
-  recapiti disponibili (WhatsApp, cellulare, fisso, email, sito online), affidabilità.
-- **Scheda completa** di ogni casa: galleria a schermo intero, posti, prezzo e stima di spesa per il
-  gruppo, tariffe per periodo, costi extra citati, descrizioni (portali e sito della casa), servizi,
-  dotazioni della cucina, calendario delle date occupate, video, mappa con indicazioni stradali,
-  case vicine, verifica di operatività e cosa è cambiato rispetto ai dati precedenti.
-- **Contatti pronti all'uso**: cellulare, fisso, WhatsApp, email, sito, social, moduli dei portali,
-  e un **compositore della richiesta di disponibilità** che prepara il testo e lo apre in WhatsApp
-  o nell'email, poi segna la casa come “contattata”.
-- **Le mie liste**: Preferite più liste personali, stato del contatto (da contattare, contattata,
-  in attesa, disponibile, preventivo, prenotata, scartata), voto, preventivo e appunti.
-- **Esporta e importa** tutto in un file JSON: per passare a un altro dispositivo o per
-  **confrontare le scelte di più persone** (importazione come liste separate con il nome di chi le
-  ha fatte, confronto tra due liste: in comune / solo nell'una / solo nell'altra). Esportazione CSV
-  per Excel o Fogli Google, stampa, link condivisibili di liste, schede e ricerche.
-- **Confronto** affiancato fino a 6 case con il valore migliore evidenziato.
-- **Ricerche salvate**, tema chiaro e scuro, funziona da telefono.
-- **Pagina Dati**: panoramica visiva, elenco delle case forse non più operative con il motivo.
+Il sito è costruito attorno al lavoro di chi organizza un'uscita: **trovare** le case adatte,
+**contattarle**, **scegliere** insieme agli altri. Si mostra subito solo quello che serve a tutti;
+il resto è a un clic.
+
+**Cerca** (pagina iniziale) si apre con una frase da completare, con le quattro domande che contano
+per ogni gruppo e per le quali i dati ci sono quasi sempre:
+
+> Siamo in **35**, partiamo da **Roma, entro 150 km**, **a luglio**, e cerchiamo una casa **in montagna**.
+
+- *Quanti siete* (e per quante notti): posti letto sufficienti, minimo di persone e di notti.
+- *Da dove partite*: distanza in linea d'aria, ordinamento dalla più vicina, cerchio sulla mappa.
+- *In che periodo*: mesi di apertura, oppure date precise (con il calendario delle prenotazioni,
+  che però esiste solo per una ventina di case).
+- *In che zona*: mare, montagna, collina, lago…, e com'è intorno (isolata, nel bosco…).
+
+Sotto la frase, poche **scorciatoie** per quello che conta di più per un gruppo: telefono o email
+(solo una casa su cinque li ha: le altre si contattano dal modulo del portale), prezzo indicato,
+spazio per tende, campo da calcio, sala grande, cucina industriale, falò, isolata, accessibile.
+Tutto il resto (oltre 40 servizi, alloggi, prezzo massimo, regioni, quota, servizi vicini, profilo
+ospiti, tipo di struttura, affidabilità, ricerche salvate) è in **Tutti i filtri**. Ogni opzione
+mostra quante case restano; se non resta nessuna casa, il sito propone quale richiesta togliere.
+
+Le **schede** mostrano solo nome, comune e distanza, posti, prezzo (o "da chiedere") con la stima
+di spesa per il gruppo, i servizi chiesti, e **come si contatta** la casa. Accanto, la mappa;
+in alternativa l'elenco compatto ordinabile o la sola mappa.
+
+La **scheda della casa** ha un indice delle sezioni; in primo piano c'è *Prepara la richiesta*,
+che scrive il messaggio con persone e periodo e lo apre in WhatsApp o nell'email (o lo copia per
+il modulo del portale), poi segna la casa come contattata. Le parti lunghe o secondarie
+(altre descrizioni, tutte le informazioni delle schede, verifica di operatività) sono chiuse
+all'inizio. Su telefono una barra in basso tiene sempre a portata la richiesta e la chiamata.
+
+**Le mie case** raccoglie le case salvate, divise in liste, e le ordina per **a che punto siete**:
+da contattare, aspettiamo risposta, hanno risposto, prenotata (le scartate restano in fondo,
+chiuse). Ogni casa ha recapiti, stato, voto, preventivo e appunti. La vista **Confronta** affianca
+le case della lista con il valore migliore di ogni riga evidenziato. Si può esportare e importare
+tutto in un file (anche per confrontare le scelte di più persone), scaricare in CSV, stampare,
+condividere con un link.
+
+La pagina **Dati** (icona *i* in alto) spiega da dove vengono i dati e quali case potrebbero
+non essere più operative.
 
 I dati personali (liste, note, voti) restano **solo nel browser** di chi usa il sito
 (localStorage): nessun account, nessun server.
@@ -56,8 +74,10 @@ Per provarlo sul computer: `python3 -m http.server 8000` nella cartella e apri
 ```
 index.html              pagina unica
 assets/css/app.css      stile (tema chiaro e scuro)
-assets/js/              moduli: app (navigazione), filters, explore (schede/tabella), map,
-                        detail (scheda e richiesta), lists, compare, datapage, store (dati personali)
+assets/js/              moduli: app (navigazione), query (la frase con le quattro domande),
+                        filters (stato, conteggi, scorciatoie, Tutti i filtri), explore (schede ed
+                        elenco), map, detail (scheda e richiesta), lists (Le mie case), compare,
+                        datapage, store (dati personali)
 assets/icons.svg        icone (Lucide, ISC; Simple Icons, CC0)
 assets/fonts/           Archivo e Source Serif 4 (OFL)
 vendor/                 Leaflet, Leaflet.markercluster, topojson-client

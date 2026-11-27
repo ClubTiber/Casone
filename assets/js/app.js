@@ -1,13 +1,13 @@
-// Avvio, navigazione tra le sezioni e collegamenti tra filtri, schede e mappa.
-import { $, $$, debounce, toast, icon, esc, plural } from './util.js';
+// Avvio, navigazione tra le sezioni e collegamenti tra frase, filtri, schede e mappa.
+import { $, $$, debounce, toast, icon } from './util.js';
 import { D, loadCore, loadDetails } from './data.js';
 import * as store from './store.js';
 import * as FL from './filters.js';
+import * as Q from './query.js';
 import * as EX from './explore.js';
 import * as M from './map.js';
 import { openDetail, closeDetail, isOpen, setOnClose } from './detail.js';
-import { renderLists, importModal, setCurrent } from './lists.js';
-import { renderCompare } from './compare.js';
+import { renderLists, importModal, listsModal, setView } from './lists.js';
 import { renderData } from './datapage.js';
 
 let lastBase = '#/';
@@ -17,22 +17,25 @@ const isMobile = () => matchMedia('(max-width: 900px)').matches;
 async function boot() {
   const sprite = fetch('assets/icons.svg').then(r => r.text()).then(t => { $('#sprite').outerHTML = t; });
   try { await Promise.all([loadCore(), sprite]); }
-  catch (e) { $('#cards').innerHTML = `<div class="empty"><h3>Non riesco a caricare i dati</h3><p>Ricarica la pagina. Se apri il file dal computer, avvia un piccolo server (vedi README).</p></div>`; console.error(e); return; }
+  catch (e) { $('#cards').innerHTML = `<div class="empty"><h3>I dati non si sono caricati</h3><p>Ricarica la pagina. Se hai aperto il file dal computer, avvia un piccolo server (vedi README).</p></div>`; console.error(e); return; }
 
   FL.buildPanel();
+  FL.bindOptions();
+  FL.renderQuick();
   const fromUrl = FL.fromHash(location.hash);
   FL.setFilters(fromUrl || store.lastFilters() || { hideChiuse: true }, true);
   if (!fromUrl && !store.lastFilters()) { const g = store.pref('grp'); if (g) FL.F.grp = g; }
+  Q.bindSentence();
   FL.syncInputs();
-  $('#sort').value = 'rel';
-  if (FL.F.origin) { $('#sort').value = 'dist'; FL.setSort('dist'); }
 
   EX.bindCards(); EX.bindTable();
   EX.setOpen(go);
-  FL.setOnApply(list => { EX.render(list); });
+  EX.setSaveMenu((id, done) => listsModal(id, done));
+  EX.renderFoot();
+  FL.onApply(list => EX.render(list));
   M.setHandlers({
     open: go,
-    origin: o => { $('#f-origin').value = o.label === 'punto scelto sulla mappa' ? 'Punto sulla mappa' : o.label; FL.setOrigin(o); toast('Distanze calcolate da qui'); },
+    origin: o => { FL.setOrigin(o); toast('Distanze calcolate da questo punto'); },
     move: debounce(b => { if ($('#areaFilter').checked) { FL.F.area = { n: b.getNorth(), s: b.getSouth(), e: b.getEast(), w: b.getWest() }; FL.apply(); } }, 250),
   });
   bindUi();
@@ -59,13 +62,15 @@ function ensureMap() {
 }
 
 function bindUi() {
-  $('#q').addEventListener('input', debounce(e => { FL.F.q = e.target.value; if (FL.F.q && !D.details) loadDetails().then(() => FL.apply()); FL.apply(); if (!location.hash.startsWith('#/') || /#\/(liste|confronta|dati)/.test(location.hash)) location.hash = '#/'; }, 220));
+  $('#q').addEventListener('input', debounce(e => {
+    FL.F.q = e.target.value;
+    if (FL.F.q && !D.details) loadDetails().then(() => FL.apply());
+    FL.apply();
+    if (!/^#\/($|\?)/.test(location.hash || '#/')) location.hash = '#/';
+  }, 220));
   $('#searchForm').addEventListener('submit', e => { e.preventDefault(); location.hash = '#/'; if (isMobile()) $('#q').blur(); });
   $('#sort').addEventListener('change', e => FL.setSort(e.target.value));
-  $$('.seg button').forEach(b => b.onclick = () => { if (b.dataset.mode === 'map') ensureMap(); EX.setMode(b.dataset.mode); if (b.dataset.mode !== 'table') ensureMap(); });
-  $('#resetAll').onclick = () => FL.resetAll();
-  $('#openFilters').onclick = () => $('#filters').classList.add('open');
-  $('#closeFilters').onclick = $('#showResults').onclick = () => $('#filters').classList.remove('open');
+  $$('.seg button').forEach(b => b.onclick = () => { if (b.dataset.mode !== 'table') ensureMap(); EX.setMode(b.dataset.mode); });
   $('#mobileToggle').onclick = () => {
     const v = $('#view-explore'); const on = !v.classList.contains('show-map');
     v.classList.toggle('show-map', on); ensureMap(); M.invalidate(on ? FL.RESULT : null);
@@ -96,30 +101,34 @@ function themeIcon() {
   $('#themeBtn').innerHTML = `<svg class="ic"><use href="#i-${dark ? 'sun' : 'moon'}"/></svg>`;
 }
 
-function updateBadges() {
-  const n = store.savedIds().size, c = store.compare().length;
-  const a = $('#navListCount'), b = $('#navCmpCount');
-  a.hidden = !n; a.textContent = n; b.hidden = !c; b.textContent = c;
+function updateBadges(what) {
+  const n = store.savedIds().size;
+  const a = $('#navListCount');
+  a.hidden = !n; a.textContent = n;
   FL.renderListSelect();
+  if (mapReady && (what === 'lists' || what === 'all')) M.refreshIcons();
 }
 
 function show(view) {
-  ['explore', 'lists', 'compare', 'data'].forEach(v => { $('#view-' + v).hidden = v !== view; });
-  $$('.nav a').forEach(a => { if (a.dataset.nav === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  ['explore', 'lists', 'data'].forEach(v => { $('#view-' + v).hidden = v !== view; });
+  $$('[data-nav]').forEach(a => { if (a.dataset.nav === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  if (view !== 'explore') Q.closePop();
 }
 
 async function route() {
   const h = location.hash || '#/';
   if (h.startsWith('#/casa/')) {
     const id = decodeURIComponent(h.slice(7));
-    if ($('#view-explore').hidden && $('#view-lists').hidden && $('#view-compare').hidden && $('#view-data').hidden) show('explore');
+    if ($('#view-explore').hidden && $('#view-lists').hidden && $('#view-data').hidden) show('explore');
+    Q.closePop();
     await openDetail(id);
     if (mapReady) { M.highlight(id); }
     return;
   }
   if (isOpen()) closeDetail(true);
-  if (h.startsWith('#/liste')) { lastBase = h; show('lists'); renderLists(); document.title = 'Le mie liste · Casone'; return; }
-  if (h.startsWith('#/confronta')) { lastBase = h; show('compare'); renderCompare(); document.title = 'Confronta · Casone'; return; }
+  // il vecchio "Confronta" ora è una vista delle liste
+  if (h.startsWith('#/confronta')) { setView('confronto'); location.replace('#/liste'); return; }
+  if (h.startsWith('#/liste')) { lastBase = h; show('lists'); renderLists(); document.title = 'Le mie case · Casone'; return; }
   if (h.startsWith('#/dati')) { lastBase = h; show('data'); renderData(); document.title = 'I dati · Casone'; return; }
   if (h.startsWith('#/lista')) {
     const p = new URLSearchParams(h.split('?')[1] || '');
@@ -129,7 +138,7 @@ async function route() {
     if (ids.length) importModal({ app: 'casone', lists: [{ id: 'shared', name, color: store.COLORS[2], ids }], notes: {} }, name, 'separate');
     return;
   }
-  // esplora
+  // cerca
   const f = FL.fromHash(h);
   if (f) { FL.setFilters(f); history.replaceState(null, '', '#/'); }
   lastBase = '#/'; show('explore'); document.title = 'Casone · case per gruppi in autogestione';

@@ -27,6 +27,12 @@ function load() {
     if (!raw) return blank();
     const s = { ...blank(), ...JSON.parse(raw) };
     if (!s.lists.find(l => l.id === 'fav')) s.lists.unshift(blank().lists[0]);
+    // il vecchio "Confronta" è diventato una vista delle liste: le case che c'erano finiscono in una lista
+    if (s.compare && s.compare.length && !s.prefs.cmpMigrated) {
+      s.lists.push({ id: 'l' + Date.now().toString(36), name: 'Da confrontare', color: COLORS[5], ids: [...s.compare], created: new Date().toISOString() });
+      s.prefs.cmpMigrated = true;
+      try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { }
+    }
     return s;
   } catch (e) { return blank(); }
 }
@@ -66,6 +72,8 @@ export const savedIds = () => new Set(S.lists.flatMap(l => l.ids));
 // ---- note personali
 export const note = hid => S.notes[hid] || {};
 export function setNote(hid, patch) {
+  // una casa con uno stato deve comparire in "Le mie case": se non è in nessuna lista va nelle Preferite
+  if (patch.status && !S.lists.some(l => l.ids.includes(hid))) { const f = getList('fav'); if (f) f.ids.unshift(hid); }
   const n = { ...(S.notes[hid] || {}), ...patch, updated: new Date().toISOString() };
   Object.keys(n).forEach(k => { if (n[k] === '' || n[k] == null || n[k] === 0) delete n[k]; });
   if (Object.keys(n).length <= 1) delete S.notes[hid]; else S.notes[hid] = n;

@@ -1,6 +1,7 @@
-// Stato dei filtri, applicazione, conteggi per ogni opzione e pannello dei filtri.
-import { $, $$, esc, icon, norm, debounce, MON, nf, fmtEuro, nightsBetween, toast } from './util.js';
-import { D, ZONE, AMB, TRATT, ALLOG, DIST, FEAT_GROUPS, featLabel, MYSTATUS, SRC, STATO, distFrom, pricePerPerson, isBusy, loadGeo } from './data.js';
+// Stato dei filtri, applicazione, conteggi per ogni opzione, filtri rapidi e pannello "Tutti i filtri".
+// I nomi dei campi di F restano quelli di sempre: link condivisi e ricerche salvate continuano a funzionare.
+import { $, $$, esc, icon, norm, debounce, MON, nf, nightsBetween, toast, plural } from './util.js';
+import { D, ZONE, AMB, TRATT, ALLOG, DIST, FEAT_GROUPS, featLabel, MYSTATUS, SRC, distFrom, pricePerPerson, isBusy } from './data.js';
 import * as store from './store.js';
 
 export function defaults() {
@@ -12,19 +13,19 @@ export function defaults() {
   };
 }
 export let F = defaults();
-let onApply = () => {};
-export function setOnApply(fn) { onApply = fn; }
+const listeners = [];
+export function onApply(fn) { listeners.push(fn); }
 export function setFilters(obj, silent) {
   F = { ...defaults(), ...(obj || {}) }; F.area = null;
   // con un punto di partenza ha senso ordinare per distanza
   if (F.origin) SORT = 'dist'; else if (SORT === 'dist') SORT = 'rel';
-  const s = document.querySelector('#sort'); if (s) s.value = SORT;
+  syncSort();
   if (!silent) { syncInputs(); apply(); }
 }
 
 // ------------------------------------------------------------ predicati
 const has = (arr, v) => (arr || []).includes(v);
-function stayNights() { return F.da && F.a ? Math.max(1, nightsBetween(F.da, F.a)) : (F.notti || null); }
+export function stayNights() { return F.da && F.a ? Math.max(1, nightsBetween(F.da, F.a)) : (F.notti || null); }
 function stayMonths() {
   if (!F.da) return [];
   const s = new Date(F.da + 'T12:00:00'), e = new Date((F.a || F.da) + 'T12:00:00'), out = new Set();
@@ -91,18 +92,31 @@ export function contactHas(h, k) {
 
 // ------------------------------------------------------------ applicazione e ordinamento
 export let RESULT = [];
-let P = [];
+let P = [], BASES = {};
 export function apply() {
-  P = preds();
+  P = preds(); BASES = {};
   RESULT = D.H.filter(h => P.every(p => p.fn(h)));
   sortResult();
   store.setLastFilters(serialize());
-  renderCounts();
+  refreshUi();
+  listeners.forEach(fn => fn(RESULT));
+}
+// aggiorna conteggi, pulsanti premuti e chip in tutte le parti visibili
+export function refreshUi() {
+  syncPressed();
+  renderCounts(document.getElementById('quick'));
+  const dr = document.getElementById('drawer'); if (dr && dr.open) { renderCounts(dr); renderSectionBadges(); }
+  const qp = document.getElementById('qpop'); if (qp && !qp.hidden) renderCounts(qp);
   renderChips();
-  onApply(RESULT);
+  renderFilterBadge();
 }
 export let SORT = 'rel';
-export function setSort(s) { SORT = s; sortResult(); onApply(RESULT); }
+export function setSort(s) { SORT = s === 'dist' && !F.origin ? 'rel' : s; syncSort(); sortResult(); listeners.forEach(fn => fn(RESULT)); }
+function syncSort() {
+  const s = document.querySelector('#sort'); if (!s) return;
+  const d = s.querySelector('option[value="dist"]'); if (d) d.hidden = d.disabled = !F.origin;
+  s.value = SORT;
+}
 function sortResult() {
   const cmp = (a, b) => a.localeCompare(b, 'it');
   const nul = v => v == null ? Infinity : v;
@@ -118,8 +132,50 @@ function sortResult() {
   };
   RESULT.sort(fns[SORT] || fns.rel);
 }
-const countWithout = (key, pred) => { let n = 0; for (const h of D.H) { if (!P.every(p => p.key === key || p.fn(h))) continue; if (pred(h)) n++; } return n; };
-function baseWithout(keys) { return D.H.filter(h => P.every(p => keys.includes(p.key) || p.fn(h))); }
+
+// ------------------------------------------------------------ conteggi
+// Ogni opzione mostra quante case resterebbero sceglendola, con tutti gli altri filtri attivi.
+const TEST = {
+  zona: k => h => (h.zona || 'ignota') === k, amb: k => h => has(h.amb, k), tratt: k => h => has(h.tratt, k), allog: k => h => has(h.allog, k),
+  prof: k => h => has(h.prof, k), mot: k => h => has(h.mot, k), tipi: k => h => has(h.tipi, k), gest: k => h => h.gest === k, mesi: k => h => has(h.mesi, k),
+  f: k => h => h._f.has(k), contatti: k => h => contactHas(h, k), mystatus: k => h => (store.note(h.id).status || '') === k, reg: k => h => h.regione === k,
+  src: k => h => k === 'BOTH' ? (h.src || []).length > 1 : has(h.src, k),
+};
+const AND_GROUPS = ['amb', 'f', 'allog', 'contatti', 'mesi'];
+// interruttori sì/no: [chiave del predicato, case contate]
+export const BOOL = {
+  prknown: ['prknown', h => !!h.prezzo || h.libera], libera: ['libera', h => h.libera], foto: ['foto', h => h.nf > 0], video: ['video', h => h.vid > 0],
+  cal: ['cal', h => !!(h.occ || h.tar)], esatta: ['esatta', h => h.geo !== 'comune'], nuovo: ['nuovo', h => h.nuovo], soloAttive: ['soloAttive', h => h.stato === 'attiva'],
+  hideChiuse: ['hideChiuse', h => h.stato === 'chiusa'], nascondiDubbie: ['nascondiDubbie', h => h.stato === 'dubbia'], freeOnly: ['date', h => !!h.occ],
+  hideScartate: ['hideScartate', h => store.note(h.id).status === 'scartata'],
+};
+function baseFor(key) { if (!BASES[key]) BASES[key] = D.H.filter(h => P.every(p => p.key === key || p.fn(h))); return BASES[key]; }
+export function optionCount(g, k) {
+  if (g === 'bool') { const b = BOOL[k]; if (!b) return 0; let n = 0; for (const h of baseFor(b[0])) if (b[1](h)) n++; return n; }
+  if (!TEST[g]) return 0;
+  const t = TEST[g](k), and = AND_GROUPS.includes(g);
+  const others = and ? (F[g] || []).filter(x => x !== k).map(x => TEST[g](x)) : [];
+  let n = 0;
+  for (const h of baseFor(g)) { if (!t(h)) continue; if (others.length && !others.every(fn => fn(h))) continue; n++; }
+  return n;
+}
+export function renderCounts(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-cnt]').forEach(el => {
+    const [g, k] = el.dataset.cnt.split('|');
+    const n = optionCount(g, g === 'mesi' ? +k : k);
+    el.textContent = nf.format(n);
+    const pill = el.closest('.pill');
+    if (pill) pill.classList.toggle('zero', !n && pill.getAttribute('aria-pressed') !== 'true');
+  });
+}
+export function syncPressed() {
+  $$('[data-g][data-k]').forEach(b => {
+    const g = b.dataset.g;
+    const on = g === 'bool' ? !!F[b.dataset.k] : (F[g] || []).includes(g === 'mesi' ? +b.dataset.k : b.dataset.k);
+    if (b.tagName === 'INPUT') b.checked = on; else b.setAttribute('aria-pressed', on);
+  });
+}
 
 // ------------------------------------------------------------ serializzazione (link condivisibili)
 export function serialize() {
@@ -135,12 +191,113 @@ export function fromHash(h) {
   const m = /[?&]f=([^&]+)/.exec(h || ''); if (!m) return null;
   try { return JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; }
 }
-export const activeCount = () => Object.keys(serialize()).filter(k => !['hideChiuse'].includes(k)).length;
 
-// ------------------------------------------------------------ pannello
-const pill = (group, k, label, extra = '') => `<button type="button" class="pill" data-g="${group}" data-k="${esc(k)}" aria-pressed="false">${extra}${esc(label)} <small data-c></small></button>`;
-const sec = (id, title, body, open) => `<details class="fsec" data-sec="${id}" ${open ? 'open' : ''}><summary>${title} <span class="on" data-on="${id}" hidden></span></summary><div class="fbody">${body}</div></details>`;
+// ------------------------------------------------------------ filtri rapidi (sotto la frase)
+// I servizi che contano di più per un gruppo, e i due dati che cambiano il lavoro: recapito diretto e prezzo.
+export const QUICK = [
+  ['contatti', 'diretto', 'Telefono o email', 'phone'],
+  ['bool', 'prknown', 'Prezzo indicato', 'euro'],
+  ['f', 'tende', 'Spazio per tende', 'tent'],
+  ['f', 'calcio', 'Campo da calcio', 'goal'],
+  ['f', 'sala_grande', 'Sala grande', 'presentation'],
+  ['f', 'cucina_ind', 'Cucina industriale', 'utensils'],
+  ['f', 'falo', 'Falò', 'flame'],
+  ['amb', 'isolata', 'Isolata', 'mountain'],
+  ['f', 'accessibilita', 'Accessibile', 'accessible'],
+];
+const pill = (g, k, label, pre = '') => `<button type="button" class="pill" data-g="${g}" data-k="${esc(k)}" aria-pressed="false">${pre}<span>${esc(label)}</span><small data-cnt="${g}|${esc(k)}"></small></button>`;
+export function renderQuick() {
+  const el = $('#quick'); if (!el) return;
+  el.innerHTML = `<button type="button" class="pill allf" id="openFilters">${icon('filter')}<span>Tutti i filtri</span><b class="badge" id="fCount" hidden></b></button>` +
+    QUICK.map(([g, k, l, ic]) => pill(g, k, l, icon(ic))).join('');
+  $('#openFilters').onclick = openDrawer;
+  syncPressed(); renderCounts(el); renderFilterBadge();
+}
 
+// ------------------------------------------------------------ elenco dei filtri attivi (chip, badge, suggerimenti)
+const QUICKSET = new Set(QUICK.map(([g, k]) => g + '|' + k));
+// where: 'frase' (le quattro domande), 'rapidi', 'pannello' (Tutti i filtri), 'q' (ricerca libera)
+export function activeFilters() {
+  const out = [];
+  const add = (where, label, undo) => out.push({ where, label, undo });
+  const arr = (g, map, where, prefix = '') => (F[g] || []).forEach(k => add(where || (QUICKSET.has(g + '|' + k) ? 'rapidi' : 'pannello'), prefix + (map ? map(k) : k), () => { F[g] = F[g].filter(x => x !== k); }));
+  if (F.q) add('q', `“${F.q}”`, () => { F.q = ''; });
+  if (F.grp) add('frase', `${F.grp} persone`, () => { F.grp = null; });
+  if (F.da) add('frase', `${F.da.split('-').reverse().join('/')}${F.a ? ' → ' + F.a.split('-').reverse().join('/') : ''}`, () => { F.da = ''; F.a = ''; });
+  else if (F.notti) add('frase', plural(F.notti, 'notte', 'notti'), () => { F.notti = null; });
+  if (F.origin && F.kmax) add('frase', `entro ${F.kmax} km`, () => { F.kmax = null; });
+  arr('mesi', k => MON[k - 1], 'frase', 'aperta a ');
+  const Z = Object.fromEntries(ZONE), A = Object.fromEntries(AMB), T = Object.fromEntries(TRATT), AL = Object.fromEntries(ALLOG);
+  arr('zona', k => Z[k], 'frase');
+  (F.amb || []).forEach(k => add(QUICKSET.has('amb|' + k) ? 'rapidi' : 'frase', A[k] || k, () => { F.amb = F.amb.filter(x => x !== k); }));
+  arr('f', featLabel);
+  const CL = { diretto: 'telefono o email', wa: 'WhatsApp', cell: 'cellulare', fisso: 'telefono fisso', email: 'email', web: 'sito online' };
+  arr('contatti', k => CL[k]);
+  if (F.prknown) add('rapidi', 'prezzo indicato', () => { F.prknown = false; });
+  arr('reg', null, 'pannello');
+  if (F.prmax) add('pannello', `≤ € ${F.prmax} a persona`, () => { F.prmax = null; });
+  if (F.libera) add('pannello', 'offerta libera', () => { F.libera = false; });
+  if (F.pmin || F.pmax) add('pannello', `posti ${F.pmin || 0}–${F.pmax || '∞'}`, () => { F.pmin = null; F.pmax = null; });
+  if (F.altmin != null || F.altmax != null) add('pannello', `quota ${F.altmin ?? 0}–${F.altmax ?? '∞'} m`, () => { F.altmin = null; F.altmax = null; });
+  arr('allog', k => AL[k], 'pannello');
+  arr('tratt', k => T[k], 'pannello');
+  Object.entries(F.dist || {}).forEach(([k, v]) => add('pannello', `${(DIST.find(d => d[0] === k) || [, k])[1]} ≤ ${v < 1 ? v * 1000 + ' m' : v + ' km'}`, () => { F.dist = { ...F.dist }; delete F.dist[k]; }));
+  arr('prof', k => D.META.codes.p[k], 'pannello');
+  arr('mot', k => D.META.codes.m[k], 'pannello');
+  arr('tipi', null, 'pannello');
+  arr('gest', null, 'pannello');
+  arr('src', k => k === 'BOTH' ? 'su entrambi i portali' : SRC[k][0], 'pannello');
+  if (F.soloAttive) add('pannello', 'solo attive', () => { F.soloAttive = false; });
+  if (F.nascondiDubbie) add('pannello', 'senza le dubbie', () => { F.nascondiDubbie = false; });
+  if (!F.hideChiuse) add('pannello', 'anche le chiuse', () => { F.hideChiuse = true; });
+  if (F.foto) add('pannello', 'con foto', () => { F.foto = false; });
+  if (F.video) add('pannello', 'con video', () => { F.video = false; });
+  if (F.cal) add('pannello', 'con calendario', () => { F.cal = false; });
+  if (F.esatta) add('pannello', 'posizione precisa', () => { F.esatta = false; });
+  if (F.nuovo) add('pannello', 'nuove', () => { F.nuovo = false; });
+  if (F.list) add('pannello', 'lista: ' + (store.getList(F.list)?.name || ''), () => { F.list = ''; });
+  arr('mystatus', k => (MYSTATUS.find(x => x[0] === k) || [, k])[1], 'pannello', 'stato: ');
+  if (F.hideScartate) add('pannello', 'senza le scartate', () => { F.hideScartate = false; });
+  if (F.area) add('pannello', 'area della mappa', () => { F.area = null; const a = $('#areaFilter'); if (a) a.checked = false; });
+  return out;
+}
+// quante case ci sarebbero togliendo ciascun filtro: per suggerire cosa allentare
+export function relaxOptions() {
+  const out = [];
+  for (const a of activeFilters()) {
+    const snap = JSON.stringify(F);
+    a.undo();
+    const PP = preds();
+    const n = D.H.reduce((s, h) => s + (PP.every(p => p.fn(h)) ? 1 : 0), 0);
+    F = JSON.parse(snap);
+    if (n > RESULT.length) out.push({ ...a, n });
+  }
+  return out.sort((x, y) => y.n - x.n);
+}
+export function undoAndApply(a) { a.undo(); syncInputs(); apply(); }
+
+function renderChips() {
+  const el = $('#chips'); if (!el) return;
+  const list = activeFilters().filter(a => a.where === 'pannello' || a.where === 'q');
+  el.innerHTML = list.map((a, i) => `<span class="chip">${esc(a.label)}<button type="button" data-i="${i}" aria-label="Togli ${esc(a.label)}">${icon('x')}</button></span>`).join('') +
+    (list.length > 1 ? `<button type="button" class="link" data-clear>Togli questi filtri</button>` : '');
+  el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => undoAndApply(list[+b.dataset.i]));
+  const c = el.querySelector('[data-clear]'); if (c) c.onclick = () => { list.forEach(a => a.undo()); syncInputs(); apply(); };
+}
+function renderFilterBadge() {
+  const n = activeFilters().filter(a => a.where === 'pannello').length;
+  const b = $('#fCount'); if (b) { b.hidden = !n; b.textContent = n; }
+  const sr = $('#showResults'); if (sr) sr.textContent = RESULT.length ? `Mostra ${plural(RESULT.length, 'casa', 'case')}` : 'Nessuna casa: togli qualche filtro';
+}
+
+// ------------------------------------------------------------ pannello "Tutti i filtri"
+const sec = (id, title, body, open, hint) => `<details class="fsec" data-sec="${id}" ${open ? 'open' : ''}><summary><span>${title}</span><span class="on" data-on="${id}" hidden></span></summary><div class="fbody">${hint ? `<p class="fhint">${hint}</p>` : ''}${body}</div></details>`;
+const chk = (k, label) => `<label class="check"><input type="checkbox" data-g="bool" data-k="${k}"><span>${label}</span><small data-cnt="bool|${k}"></small></label>`;
+const SEC_KEYS = {
+  servizi: ['f'], posti: ['pmin', 'pmax', 'allog', 'tratt'], prezzo: ['prmax', 'prknown', 'libera'], zona: ['reg', 'altmin', 'altmax', 'dist'],
+  contatti: ['contatti', 'soloAttive', 'nascondiDubbie', 'hideChiuse', 'foto', 'video', 'cal', 'esatta', 'nuovo'], perchi: ['prof', 'mot'], tipo: ['tipi', 'gest', 'src'],
+  mine: ['list', 'mystatus', 'hideScartate'],
+};
 export function buildPanel() {
   const M = D.META, H = D.H;
   const regs = [...new Set(H.map(h => h.regione))].sort((a, b) => a.localeCompare(b, 'it'));
@@ -148,131 +305,127 @@ export function buildPanel() {
   const gestC = {}; H.forEach(h => { if (h.gest) gestC[h.gest] = (gestC[h.gest] || 0) + 1; });
   const motC = {}; H.forEach(h => (h.mot || []).forEach(t => motC[t] = (motC[t] || 0) + 1));
   const PROF_ORDER = ['GG', 'GP', 'GO', 'GS', 'SCO', 'F', 'FB', 'PE', 'C', 'S', 'U', 'L', 'SC', 'RE', 'PO', 'VF'];
+  const pct = n => Math.round(n / H.length * 100) + '%';
   const html = [
-    `<div class="fsec" data-sec="gruppo"><div class="fh">Il vostro gruppo <span class="on" data-on="gruppo" hidden></span></div><div class="fbody">
-      <div class="big-num"><label>Persone<input type="number" id="f-grp" min="1" step="1" inputmode="numeric" placeholder="es. 35"></label>
-      <label>Notti<input type="number" id="f-notti" min="1" step="1" inputmode="numeric" placeholder="es. 3"></label></div>
-      <div class="big-num"><label>Arrivo<input type="date" id="f-da"></label><label>Partenza<input type="date" id="f-a"></label></div>
-      <label class="check"><input type="checkbox" id="f-freeOnly"> Escludi le case già occupate in quelle date <small data-c="occ"></small></label>
-      <p class="fhint">Restano le case con abbastanza letti, senza un minimo di presenze o notti più alto del vostro, aperte nei mesi del soggiorno. Il calendario delle prenotazioni c'è solo per le case di caseinautogestione.it.</p>
-    </div></div>`,
-    sec('dove', 'Dove', `
-      <div class="frow"><input type="text" id="f-origin" list="comuniList" placeholder="Partite da… (comune)" autocomplete="off" aria-label="Comune di partenza"><button type="button" class="iconbtn" id="f-geoloc" title="Usa la mia posizione" aria-label="Usa la mia posizione">${icon('locate')}</button></div>
-      <datalist id="comuniList"></datalist>
-      <div class="frow"><label for="f-kmax">entro</label><input type="number" id="f-kmax" min="5" step="10" placeholder="qualsiasi distanza"><label>km</label></div>
-      <p class="fhint">Distanza in linea d'aria. Puoi anche fare clic destro (o tenere premuto) sulla mappa.</p>
-      <div class="pills">${ZONE.map(([k, l]) => pill('zona', k, l, `<span class="dot" style="background:var(--z-${k})"></span>`)).join('')}</div>
-      <div class="pills">${AMB.map(([k, l]) => pill('amb', k, l)).join('')}</div>
-      <div class="frow"><label for="f-altmin">quota da</label><input type="number" id="f-altmin" step="100" placeholder="m"><label for="f-altmax">a</label><input type="number" id="f-altmax" step="100" placeholder="m"></div>
-      <div class="checks reglist">${regs.map(r => `<label class="check"><input type="checkbox" data-g="reg" value="${esc(r)}"> ${esc(r)} <small data-c></small></label>`).join('')}</div>
-    `, true),
-    sec('prezzo', 'Prezzo e posti', `
-      <div class="frow"><label for="f-prmax">fino a €</label><input type="number" id="f-prmax" min="1" step="1" placeholder="qualsiasi"><label>a persona/notte</label></div>
-      <label class="check"><input type="checkbox" id="f-prknown"> Solo con prezzo indicato <small data-c="prknown"></small></label>
-      <label class="check"><input type="checkbox" id="f-libera"> Solo a offerta libera <small data-c="libera"></small></label>
-      <p class="fhint">Il prezzo manca in molte schede: senza la spunta restano anche le case "da chiedere". Per le case con prezzo per la casa intera si divide per il vostro gruppo.</p>
-      <div class="frow"><label for="f-pmin">posti da</label><input type="number" id="f-pmin" min="0" step="5" placeholder="min"><label for="f-pmax">a</label><input type="number" id="f-pmax" min="0" step="5" placeholder="max"></div>
-    `, true),
-    sec('must', 'Deve avere', FEAT_GROUPS.map(([g, keys]) => `<p class="fhint" style="margin-top:2px">${esc(g)}</p><div class="pills">${keys.filter(k => H.some(h => h._f.has(k))).map(k => pill('f', k, featLabel(k))).join('')}</div>`).join(''), true),
+    sec('servizi', 'Spazi e servizi', FEAT_GROUPS.map(([g, keys]) => `<h4>${esc(g)}</h4><div class="pills">${keys.filter(k => H.some(h => h._f.has(k)) && k !== 'cucina').map(k => pill('f', k, featLabel(k))).join('')}</div>`).join(''), true,
+      'Devono avere tutto quello che scegli. Quasi tutte hanno una cucina, per questo non compare.'),
+    sec('posti', 'Posti e alloggi', `
+      <div class="frow"><label for="f-pmin">Posti letto da</label><input type="number" id="f-pmin" data-num="pmin" min="0" step="5" placeholder="min"><label for="f-pmax">a</label><input type="number" id="f-pmax" data-num="pmax" min="0" step="5" placeholder="max"></div>
+      <h4>Come si dorme</h4><div class="pills">${ALLOG.map(([k, l]) => pill('allog', k, l)).join('')}</div>
+      <h4>Trattamento (basta uno)</h4><div class="pills">${TRATT.map(([k, l]) => pill('tratt', k, l)).join('')}</div>`, true),
+    sec('prezzo', 'Prezzo', `
+      <div class="frow"><label for="f-prmax">Fino a €</label><input type="number" id="f-prmax" data-num="prmax" min="1" step="1" placeholder="qualsiasi"><label>a persona per notte</label></div>
+      ${chk('prknown', 'Solo con il prezzo indicato')}${chk('libera', 'Solo a offerta libera')}`, false,
+      `Il prezzo c'è in ${pct(H.filter(h => h.prezzo || h.libera).length)} delle schede. Con un limite restano anche le case con prezzo da chiedere, a meno che non togli la spunta qui sotto. Il prezzo per la casa intera si divide per il vostro numero.`),
+    sec('zona', 'Regione e dintorni', `
+      <div class="reglist">${regs.map(r => `<label class="check"><input type="checkbox" data-g="reg" data-k="${esc(r)}"><span>${esc(r)}</span><small data-cnt="reg|${esc(r)}"></small></label>`).join('')}</div>
+      <h4>Quota</h4><div class="frow"><label for="f-altmin">da</label><input type="number" id="f-altmin" data-num="altmin" step="100" placeholder="m"><label for="f-altmax">a</label><input type="number" id="f-altmax" data-num="altmax" step="100" placeholder="m"></div>
+      <p class="fhint">La quota è indicata solo da ${nf.format(H.filter(h => h.alt != null).length)} case: con un limite restano solo quelle.</p>
+      <h4>Servizi a distanza di mano</h4>
+      <div class="dgrid">${DIST.map(([k, l]) => `<label for="d-${k}">${l}</label><select id="d-${k}" data-dist="${k}"><option value="">qualsiasi</option><option value="0.2">≤ 200 m</option><option value="1">≤ 1 km</option><option value="5">≤ 5 km</option><option value="10">≤ 10 km</option></select>`).join('')}</div>`),
     sec('contatti', 'Contatti e affidabilità', `
-      <div class="pills">${[['diretto', 'Un recapito diretto'], ['wa', 'WhatsApp'], ['cell', 'Cellulare'], ['fisso', 'Telefono fisso'], ['email', 'Email'], ['web', 'Sito online']].map(([k, l]) => pill('contatti', k, l)).join('')}</div>
-      <label class="check"><input type="checkbox" id="f-hideChiuse"> Nascondi le case probabilmente chiuse <small data-c="chiusa"></small></label>
-      <label class="check"><input type="checkbox" id="f-nascondiDubbie"> Nascondi quelle da verificare <small data-c="dubbia"></small></label>
-      <label class="check"><input type="checkbox" id="f-soloAttive"> Solo con segnali di attività recenti <small data-c="attiva"></small></label>
-      <label class="check"><input type="checkbox" id="f-foto"> Con foto <small data-c="foto"></small></label>
-      <label class="check"><input type="checkbox" id="f-video"> Con video <small data-c="video"></small></label>
-      <label class="check"><input type="checkbox" id="f-cal"> Con calendario o tariffe per periodo <small data-c="cal"></small></label>
-      <label class="check"><input type="checkbox" id="f-esatta"> Con posizione precisa sulla mappa <small data-c="esatta"></small></label>
-      <label class="check"><input type="checkbox" id="f-nuovo"> Aggiunte nell'ultimo aggiornamento <small data-c="nuovo"></small></label>
-    `, true),
-    sec('quando', 'Mesi di apertura', `<div class="mgrid">${MON.map((m, i) => pill('mesi', String(i + 1), m)).join('')}</div><p class="fhint">Devono essere aperte in tutti i mesi scelti (dato indicato da ${nf.format(H.filter(h => h.mesi).length)} case).</p>`),
-    sec('allog', 'Alloggi e gestione', `<div class="pills">${ALLOG.map(([k, l]) => pill('allog', k, l)).join('')}</div><p class="fhint">Trattamento (basta uno):</p><div class="pills">${TRATT.map(([k, l]) => pill('tratt', k, l)).join('')}</div>`),
-    sec('dist', 'Servizi vicini', `<div class="dgrid">${DIST.map(([k, l]) => `<label for="d-${k}">${l}</label><select id="d-${k}" data-dist="${k}"><option value="">qualsiasi</option><option value="0.2">≤ 200 m</option><option value="1">≤ 1 km</option><option value="5">≤ 5 km</option><option value="10">≤ 10 km</option></select>`).join('')}</div><p class="fhint">Distanze dichiarate nelle schede: con un limite restano solo le case che hanno il dato.</p>`),
-    sec('prof', 'Adatta a', `<div class="pills">${PROF_ORDER.filter(k => M.codes.p[k]).map(k => pill('prof', k, M.codes.p[k])).join('')}</div><p class="fhint">Profilo ospiti di ospitalitareligiosa.it (basta uno).</p>`),
-    sec('mot', 'Tipo di soggiorno', `<div class="pills">${Object.keys(M.codes.m).sort((a, b) => (motC[b] || 0) - (motC[a] || 0)).filter(k => motC[k]).map(k => pill('mot', k, M.codes.m[k])).join('')}</div>`),
-    sec('tipi', 'Tipo di struttura', `<div class="pills">${Object.keys(tipiC).sort((a, b) => tipiC[b] - tipiC[a]).map(k => pill('tipi', k, k)).join('')}</div><p class="fhint">Gestita da:</p><div class="pills">${Object.keys(gestC).sort((a, b) => gestC[b] - gestC[a]).map(k => pill('gest', k, k)).join('')}</div>`),
-    sec('src', 'Fonte', `<div class="pills">${[['OR', 'ospitalitareligiosa.it'], ['CIA', 'caseinautogestione.it'], ['BOTH', 'su entrambi']].map(([k, l]) => pill('src', k, l)).join('')}</div>`),
-    sec('mine', 'Le mie liste', `<div class="mine-box fbody" style="margin-top:0">
+      <div class="pills">${[['diretto', 'Telefono o email'], ['wa', 'WhatsApp'], ['cell', 'Cellulare'], ['fisso', 'Telefono fisso'], ['email', 'Email'], ['web', 'Sito online']].map(([k, l]) => pill('contatti', k, l)).join('')}</div>
+      <p class="fhint">Solo ${pct(H.filter(h => contactHas(h, 'diretto')).length)} delle case ha un telefono o un'email: le altre si contattano dal modulo del portale.</p>
+      ${chk('hideChiuse', 'Nascondi le case probabilmente chiuse')}${chk('nascondiDubbie', 'Nascondi quelle da verificare')}${chk('soloAttive', 'Solo con segnali di attività recenti')}
+      ${chk('foto', 'Con foto')}${chk('video', 'Con video')}${chk('cal', 'Con calendario o tariffe per periodo')}${chk('esatta', 'Con posizione precisa sulla mappa')}${chk('nuovo', "Aggiunte o cambiate nell'ultimo aggiornamento")}`),
+    sec('perchi', 'Per chi e per cosa', `
+      <h4>Accoglie (basta uno)</h4><div class="pills">${PROF_ORDER.filter(k => M.codes.p[k]).map(k => pill('prof', k, M.codes.p[k])).join('')}</div>
+      <h4>Tipo di soggiorno (basta uno)</h4><div class="pills">${Object.keys(M.codes.m).sort((a, b) => (motC[b] || 0) - (motC[a] || 0)).filter(k => motC[k]).map(k => pill('mot', k, M.codes.m[k])).join('')}</div>`, false,
+      'Dati presenti solo per le case di ospitalitareligiosa.it.'),
+    sec('tipo', 'Tipo di struttura e fonte', `
+      <div class="pills">${Object.keys(tipiC).sort((a, b) => tipiC[b] - tipiC[a]).map(k => pill('tipi', k, k)).join('')}</div>
+      <h4>Gestita da</h4><div class="pills">${Object.keys(gestC).sort((a, b) => gestC[b] - gestC[a]).map(k => pill('gest', k, k)).join('')}</div>
+      <h4>Portale</h4><div class="pills">${[['OR', 'ospitalitareligiosa.it'], ['CIA', 'caseinautogestione.it'], ['BOTH', 'su entrambi']].map(([k, l]) => pill('src', k, l)).join('')}</div>`),
+    sec('mine', 'Le mie case', `
       <div class="frow"><label for="f-list">Solo la lista</label><select id="f-list" style="flex:1"></select></div>
       <div class="pills">${MYSTATUS.filter(([k]) => k).map(([k, l]) => pill('mystatus', k, l)).join('')}</div>
-      <label class="check"><input type="checkbox" id="f-hideScartate"> Nascondi le case che ho scartato</label></div>`),
-    sec('salvate', 'Ricerche salvate', `<div id="savedSearches" class="fbody" style="margin-top:0"></div>
-      <div class="frow"><button type="button" class="btn small" id="saveSearch">${icon('bookmark')} Salva questa ricerca</button><button type="button" class="btn small" id="shareSearch">${icon('link')} Copia link</button></div>`),
+      ${chk('hideScartate', 'Nascondi le case che ho scartato')}`),
+    sec('salvate', 'Ricerche salvate', `<div id="savedSearches"></div>
+      <div class="frow"><button type="button" class="btn small" id="saveSearch">${icon('bookmark')} Salva questa ricerca</button><button type="button" class="btn small" id="shareSearch">${icon('link')} Copia il link</button></div>`),
   ];
   $('#filtersBody').innerHTML = html.join('');
   bindPanel();
   renderSaved();
   renderListSelect();
-  syncInputs();
-  // la datalist dei comuni arriva dopo (file più grande)
-  loadGeo().then(() => { $('#comuniList').innerHTML = D.COM.map(c => `<option value="${esc(c[0])} (${esc(c[1])})"></option>`).join(''); });
 }
 
-const NUMS = ['grp', 'notti', 'kmax', 'altmin', 'altmax', 'prmax', 'pmin', 'pmax'];
-const CHKS = ['freeOnly', 'prknown', 'libera', 'hideChiuse', 'nascondiDubbie', 'soloAttive', 'foto', 'video', 'cal', 'esatta', 'nuovo', 'hideScartate'];
-const ARR = ['zona', 'amb', 'reg', 'tratt', 'f', 'allog', 'prof', 'mot', 'tipi', 'gest', 'src', 'contatti', 'mesi', 'mystatus'];
-const applyD = debounce(apply, 160);
-
 function bindPanel() {
-  const body = $('#filtersBody');
-  body.addEventListener('click', e => {
-    const b = e.target.closest('.pill[data-g]'); if (!b) return;
-    const g = b.dataset.g; let k = b.dataset.k; if (g === 'mesi') k = +k;
-    const arr = F[g]; const i = arr.indexOf(k);
-    if (i >= 0) arr.splice(i, 1); else arr.push(k);
-    b.setAttribute('aria-pressed', i < 0); apply();
-  });
-  body.addEventListener('change', e => {
+  const dr = $('#drawer');
+  dr.querySelectorAll('[data-close]').forEach(b => b.onclick = () => dr.close());
+  dr.addEventListener('click', e => { if (e.target === dr) dr.close(); });
+  $('#resetAll').onclick = () => resetAll();
+  const applyD = debounce(apply, 200);
+  dr.addEventListener('input', e => {
     const t = e.target;
-    if (t.dataset.g === 'reg') { const i = F.reg.indexOf(t.value); if (t.checked && i < 0) F.reg.push(t.value); if (!t.checked && i >= 0) F.reg.splice(i, 1); apply(); return; }
-    if (t.dataset.dist) { F.dist = { ...F.dist, [t.dataset.dist]: t.value ? +t.value : undefined }; Object.keys(F.dist).forEach(k => F.dist[k] == null && delete F.dist[k]); apply(); return; }
+    if (t.dataset.num) { const v = t.value; F[t.dataset.num] = v === '' ? null : +v; applyD(); }
   });
-  NUMS.forEach(k => $('#f-' + k).addEventListener('input', e => { const v = e.target.value; F[k] = v === '' ? null : +v; if (k === 'grp') store.setPref('grp', F.grp); applyD(); }));
-  CHKS.forEach(k => $('#f-' + k).addEventListener('change', e => { F[k] = e.target.checked; apply(); }));
-  ['da', 'a'].forEach(k => $('#f-' + k).addEventListener('change', e => {
-    F[k] = e.target.value;
-    if (k === 'da' && F.a && F.a <= F.da) { F.a = ''; $('#f-a').value = ''; }
-    if (F.da && F.a) { F.notti = nightsBetween(F.da, F.a); $('#f-notti').value = F.notti; }
-    apply();
-  }));
+  dr.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.dist) { F.dist = { ...F.dist, [t.dataset.dist]: t.value ? +t.value : undefined }; Object.keys(F.dist).forEach(k => F.dist[k] == null && delete F.dist[k]); apply(); }
+  });
   $('#f-list').addEventListener('change', e => { F.list = e.target.value; apply(); });
-  $('#f-origin').addEventListener('change', async e => {
-    const v = e.target.value.trim(); if (!v) { setOrigin(null); return; }
-    await loadGeo();
-    const lv = v.toLowerCase();
-    const c = D.COM.find(c => (c[0] + ' (' + c[1] + ')').toLowerCase() === lv) || D.COM.find(c => c[0].toLowerCase() === lv) || D.COM.find(c => c[0].toLowerCase().startsWith(lv));
-    if (c) { e.target.value = `${c[0]} (${c[1]})`; setOrigin({ lat: c[2], lon: c[3], label: `${c[0]} (${c[1]})` }); }
-    else toast('Comune non trovato: scegli dall\'elenco che compare scrivendo.');
-  });
-  $('#f-geoloc').onclick = () => {
-    if (!navigator.geolocation) return toast('Il browser non permette di leggere la posizione.');
-    navigator.geolocation.getCurrentPosition(p => { $('#f-origin').value = 'La mia posizione'; setOrigin({ lat: p.coords.latitude, lon: p.coords.longitude, label: 'la tua posizione' }); },
-      () => toast('Posizione non disponibile: scrivi il comune di partenza.'), { timeout: 10000 });
-  };
   $('#saveSearch').onclick = () => {
     const name = prompt('Nome della ricerca (es. "Campo estivo 40 persone")'); if (!name) return;
     store.saveSearch(name.trim(), serialize()); renderSaved(); toast('Ricerca salvata');
   };
   $('#shareSearch').onclick = async () => {
     const url = location.origin + location.pathname + toHash();
-    try { await navigator.clipboard.writeText(url); toast('Link copiato: chi lo apre vede gli stessi filtri'); }
+    try { await navigator.clipboard.writeText(url); toast('Link copiato: chi lo apre vede la stessa ricerca'); }
     catch (e) { prompt('Copia il link:', url); }
   };
 }
+// clic su qualsiasi opzione (pannello, filtri rapidi, finestre della frase)
+export function bindOptions() {
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button.pill[data-g][data-k]'); if (!b) return;
+    toggleOption(b.dataset.g, b.dataset.k);
+  });
+  document.addEventListener('change', e => {
+    const t = e.target; if (t.tagName !== 'INPUT' || t.type !== 'checkbox' || !t.dataset.g || t.dataset.k == null) return;
+    toggleOption(t.dataset.g, t.dataset.k, t.checked);
+  });
+}
+export function toggleOption(g, k, want) {
+  if (g === 'bool') { F[k] = want == null ? !F[k] : want; apply(); return; }
+  if (g === 'mesi') k = +k;
+  const arr = F[g] = [...(F[g] || [])]; const i = arr.indexOf(k);
+  const on = want == null ? i < 0 : want;
+  if (on && i < 0) arr.push(k); if (!on && i >= 0) arr.splice(i, 1);
+  apply();
+}
+function renderSectionBadges() {
+  const d = defaults();
+  $$('#drawer [data-on]').forEach(el => {
+    const n = (SEC_KEYS[el.dataset.on] || []).reduce((s, k) => {
+      const v = F[k];
+      if (Array.isArray(v)) return s + v.length;
+      if (k === 'dist') return s + Object.keys(v || {}).length;
+      return s + (JSON.stringify(v) !== JSON.stringify(d[k]) ? 1 : 0);
+    }, 0);
+    el.hidden = !n; el.textContent = n;
+  });
+}
+export function openDrawer() {
+  const dr = $('#drawer');
+  syncInputs();
+  if (!dr.open) dr.showModal();
+  renderCounts(dr); renderSectionBadges(); renderFilterBadge();
+}
+
 export function setOrigin(o) {
   F.origin = o; store.setPref('origin', o);
-  if (o && !F.kmax) { /* niente limite: ordina per distanza */ }
-  if (o) { SORT = 'dist'; const s = $('#sort'); if (s) s.value = 'dist'; }
+  if (o) SORT = 'dist'; else if (SORT === 'dist') SORT = 'rel';
+  syncSort();
   apply();
 }
 export function renderSaved() {
   const el = $('#savedSearches'); if (!el) return;
   const S = store.state().saved;
-  el.innerHTML = S.length ? S.map(s => `<div class="frow"><button type="button" class="pill" data-load="${s.id}" style="flex:1;justify-content:flex-start">${icon('search')} ${esc(s.name)}</button><button type="button" class="iconbtn" data-del="${s.id}" aria-label="Elimina ricerca ${esc(s.name)}">${icon('trash')}</button></div>`).join('')
-    : '<p class="fhint">Salva qui le combinazioni di filtri che usi spesso.</p>';
+  el.innerHTML = S.length ? S.map(s => `<div class="frow"><button type="button" class="btn small quiet saved" data-load="${s.id}">${icon('search')} ${esc(s.name)}</button><button type="button" class="iconbtn" data-del="${s.id}" aria-label="Elimina ricerca ${esc(s.name)}">${icon('trash')}</button></div>`).join('')
+    : '<p class="fhint">Salva qui le ricerche che usi spesso, per esempio una per ogni uscita.</p>';
   el.onclick = e => {
     const l = e.target.closest('[data-load]'), d = e.target.closest('[data-del]');
-    if (l) { const s = S.find(x => x.id === l.dataset.load); if (s) { setFilters(s.filters); toast('Ricerca "' + s.name + '" applicata'); } }
+    if (l) { const s = S.find(x => x.id === l.dataset.load); if (s) { setFilters(s.filters); $('#drawer').close(); toast('Ricerca "' + s.name + '" applicata'); } }
     if (d) { store.deleteSearch(d.dataset.del); renderSaved(); }
   };
 }
@@ -281,109 +434,15 @@ export function renderListSelect() {
   el.innerHTML = `<option value="">tutte le case</option>` + store.lists().map(l => `<option value="${l.id}">${esc(l.name)} (${l.ids.length})</option>`).join('');
   el.value = F.list || '';
 }
+let onSync = () => {};
+export function setOnSync(fn) { onSync = fn; }
 export function syncInputs() {
-  NUMS.forEach(k => { const el = $('#f-' + k); if (el) el.value = F[k] ?? ''; });
-  CHKS.forEach(k => { const el = $('#f-' + k); if (el) el.checked = !!F[k]; });
-  ['da', 'a'].forEach(k => { const el = $('#f-' + k); if (el) el.value = F[k] || ''; });
-  const o = $('#f-origin'); if (o) o.value = F.origin ? F.origin.label : '';
-  $$('#filtersBody .pill[data-g]').forEach(b => { const g = b.dataset.g; const k = g === 'mesi' ? +b.dataset.k : b.dataset.k; b.setAttribute('aria-pressed', (F[g] || []).includes(k)); });
-  $$('#filtersBody input[data-g="reg"]').forEach(i => i.checked = F.reg.includes(i.value));
-  $$('#filtersBody select[data-dist]').forEach(s => s.value = F.dist[s.dataset.dist] ?? '');
+  $$('[data-num]').forEach(el => { el.value = F[el.dataset.num] ?? ''; });
+  $$('select[data-dist]').forEach(s => s.value = F.dist[s.dataset.dist] ?? '');
+  syncPressed();
   renderListSelect();
   const q = $('#q'); if (q && q.value !== F.q) q.value = F.q;
+  syncSort();
+  onSync();
 }
-
-// conteggi accanto a ogni opzione, calcolati con tutti gli altri filtri attivi
-function renderCounts() {
-  const body = $('#filtersBody'); if (!body) return;
-  const groups = {};
-  $$('.pill[data-g]', body).forEach(b => (groups[b.dataset.g] = groups[b.dataset.g] || []).push(b));
-  const keyOf = { zona: 'zona', amb: 'amb', reg: 'reg', tratt: 'tratt', f: 'f', allog: 'allog', prof: 'prof', mot: 'mot', tipi: 'tipi', gest: 'gest', src: 'src', contatti: 'contatti', mesi: 'mesi', mystatus: 'mystatus' };
-  for (const [g, btns] of Object.entries(groups)) {
-    const base = baseWithout([keyOf[g]]);
-    const others = new Set(F[g] || []);
-    for (const b of btns) {
-      const k = g === 'mesi' ? +b.dataset.k : b.dataset.k;
-      let n;
-      const test = {
-        zona: h => (h.zona || 'ignota') === k, amb: h => has(h.amb, k), tratt: h => has(h.tratt, k), allog: h => has(h.allog, k),
-        prof: h => has(h.prof, k), mot: h => has(h.mot, k), tipi: h => has(h.tipi, k), gest: h => h.gest === k, mesi: h => has(h.mesi, k),
-        f: h => h._f.has(k), contatti: h => contactHas(h, k), mystatus: h => (store.note(h.id).status || '') === k,
-        src: h => k === 'BOTH' ? (h.src || []).length > 1 : has(h.src, k),
-      }[g];
-      // per i gruppi "tutti insieme" (AND) il conteggio parte dalle case che hanno già le altre scelte
-      const and = ['amb', 'f', 'allog', 'contatti', 'mesi'].includes(g);
-      const pool = and ? base.filter(h => [...others].filter(x => x !== k).every(x => g === 'mesi' ? has(h.mesi, x) : g === 'f' ? h._f.has(x) : g === 'contatti' ? contactHas(h, x) : has(h[g === 'amb' ? 'amb' : 'allog'], x))) : base;
-      n = 0; for (const h of pool) if (test(h)) n++;
-      const c = b.querySelector('[data-c]'); if (c) c.textContent = n;
-      b.classList.toggle('zero', !n && b.getAttribute('aria-pressed') !== 'true');
-    }
-  }
-  const regBase = baseWithout(['reg']); const rc = {}; regBase.forEach(h => rc[h.regione] = (rc[h.regione] || 0) + 1);
-  $$('input[data-g="reg"]', body).forEach(i => { i.closest('label').querySelector('[data-c]').textContent = rc[i.value] || 0; });
-  const simple = { prknown: ['prknown', h => !!h.prezzo || h.libera], libera: ['libera', h => h.libera], foto: ['foto', h => h.nf > 0], video: ['video', h => h.vid > 0],
-    cal: ['cal', h => !!(h.occ || h.tar)], esatta: ['esatta', h => h.geo !== 'comune'], nuovo: ['nuovo', h => h.nuovo], attiva: ['soloAttive', h => h.stato === 'attiva'],
-    chiusa: ['hideChiuse', h => h.stato === 'chiusa'], dubbia: ['nascondiDubbie', h => h.stato === 'dubbia'], occ: ['date', h => !!h.occ] };
-  for (const [c, [key, fn]] of Object.entries(simple)) { const el = body.querySelector(`[data-c="${c}"]`); if (el) el.textContent = countWithout(key, fn); }
-  // numero di filtri attivi per sezione
-  const on = {
-    gruppo: [F.grp, F.notti, F.da].filter(Boolean).length, dove: F.zona.length + F.amb.length + F.reg.length + (F.origin ? 1 : 0) + (F.altmin != null) + (F.altmax != null),
-    prezzo: [F.prmax, F.prknown, F.libera, F.pmin, F.pmax].filter(Boolean).length, must: F.f.length,
-    contatti: F.contatti.length + [F.soloAttive, F.nascondiDubbie, F.foto, F.video, F.cal, F.esatta, F.nuovo].filter(Boolean).length,
-    quando: F.mesi.length, allog: F.allog.length + F.tratt.length, dist: Object.keys(F.dist).length, prof: F.prof.length, mot: F.mot.length,
-    tipi: F.tipi.length + F.gest.length, src: F.src.length, mine: (F.list ? 1 : 0) + F.mystatus.length + (F.hideScartate ? 1 : 0),
-  };
-  $$('[data-on]', body).forEach(el => { const n = on[el.dataset.on] || 0; el.hidden = !n; el.textContent = n; });
-  const fc = $('#fCount'); if (fc) { const n = activeCount(); fc.hidden = !n; fc.textContent = n; }
-}
-
-// chip dei filtri attivi, ciascuno rimovibile
-function renderChips() {
-  const el = $('#chips'); if (!el) return;
-  const out = [];
-  const chip = (label, undo) => { out.push([label, undo]); };
-  const lab = (arr, map) => arr.map(k => map[k] || k);
-  if (F.q) chip(`“${F.q}”`, () => { F.q = ''; });
-  if (F.grp) chip(`${F.grp} persone`, () => { F.grp = null; });
-  if (F.da) chip(`${F.da.split('-').reverse().join('/')}${F.a ? ' → ' + F.a.split('-').reverse().join('/') : ''}`, () => { F.da = ''; F.a = ''; });
-  else if (F.notti) chip(`${F.notti} notti`, () => { F.notti = null; });
-  if (F.origin) chip(`da ${F.origin.label}${F.kmax ? ' entro ' + F.kmax + ' km' : ''}`, () => { F.origin = null; F.kmax = null; });
-  const Z = Object.fromEntries(ZONE), A = Object.fromEntries(AMB), T = Object.fromEntries(TRATT), AL = Object.fromEntries(ALLOG);
-  F.zona.forEach(k => chip(Z[k], () => F.zona = F.zona.filter(x => x !== k)));
-  F.amb.forEach(k => chip(A[k], () => F.amb = F.amb.filter(x => x !== k)));
-  F.reg.forEach(k => chip(k, () => F.reg = F.reg.filter(x => x !== k)));
-  if (F.prmax) chip(`≤ € ${F.prmax} a persona`, () => F.prmax = null);
-  if (F.prknown) chip('con prezzo', () => F.prknown = false);
-  if (F.libera) chip('offerta libera', () => F.libera = false);
-  if (F.pmin || F.pmax) chip(`posti ${F.pmin || 0}–${F.pmax || '∞'}`, () => { F.pmin = null; F.pmax = null; });
-  if (F.altmin != null || F.altmax != null) chip(`quota ${F.altmin ?? 0}–${F.altmax ?? '∞'} m`, () => { F.altmin = null; F.altmax = null; });
-  F.f.forEach(k => chip(featLabel(k), () => F.f = F.f.filter(x => x !== k)));
-  F.allog.forEach(k => chip(AL[k], () => F.allog = F.allog.filter(x => x !== k)));
-  F.tratt.forEach(k => chip(T[k], () => F.tratt = F.tratt.filter(x => x !== k)));
-  F.mesi.forEach(k => chip('aperta a ' + MON[k - 1], () => F.mesi = F.mesi.filter(x => x !== k)));
-  const CL = { diretto: 'con recapito diretto', wa: 'WhatsApp', cell: 'cellulare', fisso: 'telefono fisso', email: 'email', web: 'sito online' };
-  F.contatti.forEach(k => chip(CL[k], () => F.contatti = F.contatti.filter(x => x !== k)));
-  Object.entries(F.dist).forEach(([k, v]) => chip(`${(DIST.find(d => d[0] === k) || [, k])[1]} ≤ ${v < 1 ? v * 1000 + ' m' : v + ' km'}`, () => { delete F.dist[k]; }));
-  F.prof.forEach(k => chip(D.META.codes.p[k], () => F.prof = F.prof.filter(x => x !== k)));
-  F.mot.forEach(k => chip(D.META.codes.m[k], () => F.mot = F.mot.filter(x => x !== k)));
-  F.tipi.forEach(k => chip(k, () => F.tipi = F.tipi.filter(x => x !== k)));
-  F.gest.forEach(k => chip(k, () => F.gest = F.gest.filter(x => x !== k)));
-  F.src.forEach(k => chip(k === 'BOTH' ? 'su entrambi i portali' : SRC[k][0], () => F.src = F.src.filter(x => x !== k)));
-  if (F.soloAttive) chip('solo attive', () => F.soloAttive = false);
-  if (F.nascondiDubbie) chip('senza le dubbie', () => F.nascondiDubbie = false);
-  if (!F.hideChiuse) chip('incluse le chiuse', () => F.hideChiuse = true);
-  if (F.foto) chip('con foto', () => F.foto = false);
-  if (F.video) chip('con video', () => F.video = false);
-  if (F.cal) chip('con calendario', () => F.cal = false);
-  if (F.esatta) chip('posizione precisa', () => F.esatta = false);
-  if (F.nuovo) chip('nuove', () => F.nuovo = false);
-  if (F.list) chip('lista: ' + (store.getList(F.list)?.name || ''), () => F.list = '');
-  F.mystatus.forEach(k => chip('stato: ' + (MYSTATUS.find(x => x[0] === k) || [, k])[1], () => F.mystatus = F.mystatus.filter(x => x !== k)));
-  if (F.hideScartate) chip('senza scartate', () => F.hideScartate = false);
-  if (F.area) chip('area della mappa', () => { F.area = null; const a = $('#areaFilter'); if (a) a.checked = false; });
-  el.innerHTML = out.map(([l], i) => `<span class="chip">${esc(l)}<button type="button" data-i="${i}" aria-label="Togli ${esc(l)}">${icon('x')}</button></span>`).join('') +
-    (out.length > 1 ? `<button type="button" class="link" id="chipsReset">Togli tutti</button>` : '');
-  el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { out[+b.dataset.i][1](); syncInputs(); apply(); });
-  const r = $('#chipsReset'); if (r) r.onclick = () => resetAll();
-}
-export function resetAll() { const l = F.list; F = defaults(); syncInputs(); const a = $('#areaFilter'); if (a) a.checked = false; apply(); }
+export function resetAll() { F = defaults(); syncInputs(); const a = $('#areaFilter'); if (a) a.checked = false; if (SORT === 'dist') SORT = 'rel'; syncSort(); apply(); }

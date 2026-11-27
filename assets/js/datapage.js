@@ -46,7 +46,7 @@ export async function renderData() {
       <p><b>Posti e prezzi.</b> I posti letto sono quelli dichiarati; se i due portali danno numeri diversi li mostriamo entrambi. Il prezzo viene, in quest'ordine, dalle tariffe per periodo di caseinautogestione.it, dal prezzo indicato nella scheda e, se manca, dai prezzi citati nelle descrizioni o nel sito della casa (segnato come “circa”). Molte case non pubblicano prezzi: in quel caso trovi “prezzo da chiedere”.</p>
       <p><b>Posizione.</b> Per le case di ospitalitareligiosa.it la posizione è quella della mappa nella scheda; per le altre è ricavata dall'indirizzo con OpenStreetMap o, se non trovata, è il centro del comune (indicato come “posizione approssimata”).</p>
       <p><b>Calendario.</b> Le date occupate vengono dal calendario di caseinautogestione.it, che non tutti i gestori aggiornano: una data libera non garantisce la disponibilità.</p>
-      <p><b>Le tue liste.</b> Preferite, liste, note e voti restano solo nel tuo browser (nessun account, nessun server). Per non perderli o per condividerli usa “Esporta” in Le mie liste.</p>
+      <p><b>Le tue liste.</b> Preferite, liste, note e voti restano solo nel tuo browser (nessun account, nessun server). Per non perderli o per condividerli usa “Esporta” in Le mie case.</p>
       <p><b>Foto.</b> Le foto si caricano direttamente dai portali e dai siti delle case, che ne restano proprietari.</p>
     </div></section>
   </div>`;
